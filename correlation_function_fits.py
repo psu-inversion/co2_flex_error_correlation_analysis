@@ -36,7 +36,7 @@ GLOBAL_DICT = dict(
     FOUR_PI_OVER_YEAR=4 * pi / DAYS_PER_YEAR,
 )
 
-TOPK = 1
+TOPK = 7
 
 
 class CorrelationPart(Enum):
@@ -397,45 +397,50 @@ if __name__ == "__main__":
 
 ### TOPK = 1
 # Number of towers: 69
-# Good function: dp_dmp_ap        Count in top 1: 62
-# Good function: dp_dmp_a0        Count in top 1: 7
+# Good function: dc_dmc_ac        Count in top 1: 27
+# Good function: dc_dmc_ap        Count in top 1: 22
+# Good function: dp_dmc_ac        Count in top 1: 8
+# Good function: dp_dmp_ac        Count in top 1: 5
+# Good function: dc_dmp_ap        Count in top 1: 2
 ### TOPK = 2
 # Number of towers: 69
-# Good function: dp_dmp_ap        Count in top 2: 65
-# Good function: dp_dmp_a0        Count in top 2: 64
-# Good function: dp_dm0_ap        Count in top 2: 9
+# Good function: dc_dmc_ac        Count in top 2: 46
+# Good function: dc_dmc_ap        Count in top 2: 37
+# Good function: dp_dmc_ac        Count in top 2: 16
+# Good function: dc_dmp_ac        Count in top 2: 11
+# Good function: dp_dmp_ac        Count in top 2: 9
 ### TOPK = 3
 # Number of towers: 69
-# Good function: dp_dmp_a0        Count in top 3: 68
-# Good function: dp_dmp_ap        Count in top 3: 65
-# Good function: dp_dm0_ap        Count in top 3: 65
-# Good function: dp_dm0_a0        Count in top 3: 4
-# Good function: dp_dm0_ac        Count in top 3: 3
+# Good function: dc_dmc_ac        Count in top 3: 52
+# Good function: dc_dmc_ap        Count in top 3: 41
+# Good function: dp_dmc_ac        Count in top 3: 27
+# Good function: dc_dmp_ac        Count in top 3: 19
+# Good function: dc_dmp_ap        Count in top 3: 18
 ### TOPK = 4
 # Number of towers: 69
-# Good function: dp_dmp_a0        Count in top 4: 69
-# Good function: dp_dm0_ap        Count in top 4: 67
-# Good function: dp_dmp_ap        Count in top 4: 65
-# Good function: dp_dm0_a0        Count in top 4: 54
-# Good function: d0_dm0_ap        Count in top 4: 11
+# Good function: dc_dmc_ac        Count in top 4: 56
+# Good function: dc_dmc_ap        Count in top 4: 47
+# Good function: dp_dmc_ac        Count in top 4: 36
+# Good function: dc_dmp_ac        Count in top 4: 31
+# Good function: dc_dmp_ap        Count in top 4: 29
 ### TOPK = 5
 # Number of towers: 69
-# Good function: dp_dmp_a0        Count in top 5: 69
-# Good function: dp_dm0_ap        Count in top 5: 68
-# Good function: dp_dmp_ap        Count in top 5: 65
-# Good function: dp_dm0_a0        Count in top 5: 65
-# Good function: d0_dm0_ap        Count in top 5: 39
+# Good function: dc_dmc_ac        Count in top 5: 59
+# Good function: dc_dmc_ap        Count in top 5: 50
+# Good function: dc_dmp_ac        Count in top 5: 48
+# Good function: dp_dmc_ac        Count in top 5: 45
+# Good function: dc_dmc_a0        Count in top 5: 33
 ### TOPK = 6
 # Number of towers: 69
-# Good function: dp_dmp_a0        Count in top 6: 69
-# Good function: dp_dm0_ap        Count in top 6: 68
-# Good function: dp_dm0_a0        Count in top 6: 66
-# Good function: dp_dmp_ap        Count in top 6: 65
-# Good function: d0_dm0_ap        Count in top 6: 51
+# Good function: dc_dmc_ac        Count in top 6: 65
+# Good function: dc_dmp_ac        Count in top 6: 53
+# Good function: dc_dmc_ap        Count in top 6: 51
+# Good function: dp_dmc_ac        Count in top 6: 49
+# Good function: dc_dmp_ap        Count in top 6: 41
 ### TOPK = 7
 # Number of towers: 69
-# Good function: dp_dmp_a0        Count in top 7: 69
-# Good function: dp_dm0_ap        Count in top 7: 68
-# Good function: dp_dmp_ap        Count in top 7: 67
-# Good function: dp_dm0_a0        Count in top 7: 66
-# Good function: d0_dm0_ap        Count in top 7: 55
+# Good function: dc_dmc_ac        Count in top 7: 66
+# Good function: dc_dmp_ac        Count in top 7: 62
+# Good function: dp_dmc_ac        Count in top 7: 61
+# Good function: dc_dmc_ap        Count in top 7: 53
+# Good function: dc_dmp_ap        Count in top 7: 47
