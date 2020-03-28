@@ -43,9 +43,6 @@ PI_OVER_YEAR = np.pi / DAYS_PER_YEAR
 TWO_PI_OVER_YEAR = 2 * PI_OVER_YEAR
 FOUR_PI_OVER_YEAR = 4 * PI_OVER_YEAR
 
-# US-Cop Climate Koeppen is BSk
-# https://www.plantmaps.com/koppen-climate-classification-map-united-states.php
-
 amf_ds = xarray.open_dataset(
     "/abl/s0/Continent/dfw5129/ameriflux_netcdf/"
     "AmeriFlux_single_value_per_tower_hour_data.nc4"
@@ -121,6 +118,7 @@ for site1, site2 in itertools.product(site_coords, site_coords):
 # Convert distance to kilometers
 # Will improve conditioning of later problems
 distance_matrix /= 1000
+distance_matrix.to_csv("ameriflux-hour-towers-distance-matrix-km.csv")
 
 difference_df_rect = difference.to_dataframe(
     name="ameriflux_minus_casa_hour_towers_umol_m2_s"
@@ -296,6 +294,10 @@ for column in difference_df_rect.columns:
 to_fit = acf_data.loc[~acf_data.isna().all(axis=1), :]
 time_in_days = to_fit.index.values.astype("m8[h]").astype(np.int64) / 24
 
+acf_data.to_csv("ameriflux-minus-casa-hour-towers-autocorrelation-functions.csv")
+pair_counts.to_csv("ameriflux-minus-casa-hour-towers-pair-counts.csv")
+acovf_data.to_csv("ameriflux-minus-casa-hour-towers-autocovariance-functions.csv")
+
 # corr_to_fit, time_in_days = np.broadcast_arrays(to_fit.values, time_in_days[:, newaxis])
 # not_nan = np.isfinite(corr_to_fit)
 # corr_to_fit = corr_to_fit[not_nan]
@@ -397,13 +399,17 @@ plt.savefig("ameriflux_minus_casa_hour_tower_data_long.pdf")
 plt.xlim(0, 1e9 * 3600 * 24 * 60)
 plt.xticks(pd.timedelta_range(start=0, freq="7D", periods=8).to_numpy().astype(float))
 plt.savefig("ameriflux_minus_casa_hour_tower_data_short.pdf")
+plt.close()
 
 
 # Functions for errors correlated over only a few days
 
 
 def exp_only(tdata, resid_coef, To, Tec):
-    """Current practice: Decaying exponential"""
+    """Current practice: Decaying exponential
+
+    d_0 dm_0 a_0
+    """
     Tec /= HOURS_PER_DAY
     To *= DAYS_PER_WEEK
     exp = np.exp
@@ -413,7 +419,10 @@ def exp_only(tdata, resid_coef, To, Tec):
 
 
 def exp_cos_daily(tdata, daily_coef, Td, resid_coef, To, ec_coef, Tec):
-    """Errors in daily cycle are correlated day-night"""
+    """Errors in daily cycle are correlated day-night
+
+    d_c dm_0 a_0
+    """
     Tec /= HOURS_PER_DAY
     To *= DAYS_PER_WEEK
     Td *= DAYS_PER_WEEK
@@ -429,7 +438,10 @@ def exp_cos_daily(tdata, daily_coef, Td, resid_coef, To, ec_coef, Tec):
 
 
 def exp_cos_daily_annual(tdata, daily_coef, Td, ann_coef0, ann_coef1, ann_coef2, Ta, resid_coef, To, ec_coef, Tec):
-    """Errors in daily cycle are correlated day-night, Correlated errors in seasonal cycle"""
+    """Errors in daily cycle are correlated day-night, Correlated errors in seasonal cycle
+
+    d_c dm_0 a_c
+    """
     Tec /= HOURS_PER_DAY
     Td *= DAYS_PER_WEEK
     Ta *= DAYS_PER_YEAR
@@ -445,7 +457,10 @@ def exp_cos_daily_annual(tdata, daily_coef, Td, ann_coef0, ann_coef1, ann_coef2,
 
 
 def exp_cos_daily_expsin2_annual(tdata, daily_coef, Td, ann_coef, ann_width, Ta, resid_coef, To, ec_coef, Tec):
-    """Errors in daily cycle correlated day-night + Correlated errors in seasonal cycle are only positive"""
+    """Errors in daily cycle correlated day-night + Correlated errors in seasonal cycle are only positive
+
+    d_c dm_0 a_p
+    """
     Tec /= HOURS_PER_DAY
     Td *= DAYS_PER_WEEK
     Ta *= DAYS_PER_YEAR
@@ -467,7 +482,10 @@ def exp_cos_daily_times_annual(
     dann_coef0, dann_coef1, dann_coef2, Tad,
     resid_coef, To,
     ec_coef, Tec):
-    """Errors in daily cycle correlated day-night, recur same time next year"""
+    """Errors in daily cycle correlated day-night, recur same time next year
+
+    d_c dm_c a_0
+    """
     Tec /= HOURS_PER_DAY
     Tad *= DAYS_PER_YEAR
     To *= DAYS_PER_WEEK
@@ -489,7 +507,10 @@ def exp_expsin2_daily_times_cos_annual(
     resid_coef, To,
     ec_coef, Tec
 ):
-    """Errors in daily cycle not correlated day-night, may be anticorrelated at some lags"""
+    """Errors in daily cycle not correlated day-night, may be anticorrelated at some lags
+
+    d_p dm_c a_0
+    """
     Tec /= HOURS_PER_DAY
     Tad *= DAYS_PER_YEAR
     To *= DAYS_PER_WEEK
@@ -510,7 +531,10 @@ def exp_cos_daily_times_expsin2_annual(
     ann_coef, ann_width, Ta,
     resid_coef, To,
     ec_coef, Tec):
-    """Errors in daily cycle correlated day-night, are always of same sign day-day"""
+    """Errors in daily cycle correlated day-night, are always of same sign day-day
+
+    d_c dm_p a_0
+    """
     Tec /= HOURS_PER_DAY
     Ta *= DAYS_PER_YEAR
     To *= DAYS_PER_WEEK
@@ -529,12 +553,15 @@ def exp_cos_daily_times_expsin2_annual(
 
 
 def exp_cos_daily_times_cos_annual_plus_cos_annual(
-    tdata, daily_width,
+    tdata,
     dann_coef0, dann_coef1, dann_coef2, Tad,
     ann_coef0, ann_coef1, ann_coef2, Ta,
     resid_coef, To, ec_coef, Tec
 ):
-    """Daily cycle errors not correlated day-night, may be anticorrelated, seasonal errors correlated"""
+    """Daily cycle errors not correlated day-night, may be anticorrelated, seasonal errors correlated
+
+    d_c dm_c a_c
+    """
     Tec /= HOURS_PER_DAY
     Ta *= DAYS_PER_YEAR
     To *= DAYS_PER_WEEK
@@ -560,7 +587,10 @@ def exp_expsin2_daily_times_cos_annual_plus_cos_annual(
     ann_coef0, ann_coef1, ann_coef2, Ta,
     resid_coef, To, ec_coef, Tec
 ):
-    """Daily cycle errors not correlated day-night, may be anticorrelated, seasonal errors correlated"""
+    """Daily cycle errors not correlated day-night, may be anticorrelated, seasonal errors correlated
+
+    d_p dm_c a_c
+    """
     Tec /= HOURS_PER_DAY
     Ta *= DAYS_PER_YEAR
     To *= DAYS_PER_WEEK
@@ -580,6 +610,65 @@ def exp_expsin2_daily_times_cos_annual_plus_cos_annual(
     return result
 
 
+
+def exp_cos_daily_times_expsin2_annual_plus_cos_annual(
+    tdata,
+    dann_coef, dann_width, Tad,
+    ann_coef0, ann_coef1, ann_coef2, Ta,
+    resid_coef, To, ec_coef, Tec
+):
+    """Daily cycle errors not correlated day-night, may be anticorrelated, seasonal errors correlated"""
+    Tec /= HOURS_PER_DAY
+    Ta *= DAYS_PER_YEAR
+    To *= DAYS_PER_WEEK
+    cos = np.cos
+    exp = np.exp
+    result = (
+        dann_coef * cos(TWO_PI_OVER_DAY * tdata) *
+        exp(-np.sin(PI_OVER_YEAR * tdata / dann_width) ** 2 - tdata / Tad)
+    )
+    result += (
+        ann_coef0 + ann_coef1 * cos(TWO_PI_OVER_YEAR * tdata) +
+        ann_coef2 * cos(FOUR_PI_OVER_YEAR * tdata)
+    ) * exp(-tdata / Ta)
+    result += resid_coef * exp(-tdata / To)
+    result += ec_coef * exp(-tdata / Tec)
+    return result
+
+
+def exp_expsin2_daily_times_expsin2_annual_plus_cos_annual(
+    tdata, daily_width,
+    dann_coef, dann_width, Tad,
+    ann_coef0, ann_coef1, ann_coef2, Ta,
+    resid_coef, To, ec_coef, Tec
+):
+    """Daily cycle errors not correlated day-night, may be anticorrelated, seasonal errors correlated
+
+    d_c dm_p a_c
+    """
+    Tec /= HOURS_PER_DAY
+    Ta *= DAYS_PER_YEAR
+    To *= DAYS_PER_WEEK
+    sin = np.sin
+    cos = np.cos
+    exp = np.exp
+    result = (
+        dann_coef *
+        exp(
+            -sin(PI_OVER_DAY * tdata / daily_width) ** 2
+            -sin(PI_OVER_YEAR * tdata / dann_width) ** 2
+            - tdata / Tad
+        )
+    )
+    result += (
+        ann_coef0 + ann_coef1 * cos(TWO_PI_OVER_YEAR * tdata) +
+        ann_coef2 * cos(FOUR_PI_OVER_YEAR * tdata)
+    ) * exp(-tdata / Ta)
+    result += resid_coef * exp(-tdata / To)
+    result += ec_coef * exp(-tdata / Tec)
+    return result
+
+
 CORR_FUNS = (
     exp_only,
     exp_cos_daily,
@@ -589,7 +678,9 @@ CORR_FUNS = (
     exp_expsin2_daily_times_cos_annual,
     exp_cos_daily_times_expsin2_annual,
     exp_cos_daily_times_cos_annual_plus_cos_annual,
+    exp_cos_daily_times_expsin2_annual_plus_cos_annual,
     exp_expsin2_daily_times_cos_annual_plus_cos_annual,
+    exp_expsin2_daily_times_expsin2_annual_plus_cos_annual,
 )
 
 STARTING_PARAMS = dict(
@@ -599,6 +690,8 @@ STARTING_PARAMS = dict(
     ann_coef0 = -1e-3,
     ann_coef1 = +1e-2,
     ann_coef2 = +1e-2,
+    dann_coef = 1e-3,
+    dann_width = .3,
     dann_coef0 = -1e-3,
     dann_coef1 = +1e-2,
     dann_coef2 = +1e-2,
@@ -805,6 +898,97 @@ for column in acf_data.iloc[:, :]:
 COEF_DATA.to_csv("ameriflux-minus-casa-hour-towers-parameters.csv")
 COEF_VAR_DATA.to_csv("ameriflux-minus-casa-hour-towers-parameter-variances.csv")
 FIT_ERROR.to_csv("ameriflux-minus-casa-hour-towers-correlation-function-fits.csv")
+
+
+for column in difference_df_rect:
+    fig, axes = plt.subplots(4, 1, figsize=(6.5, 4),
+                             sharex=True, sharey=True)
+    fig.suptitle("{site:s} - {climate:s} - {veg:s}".format(
+            site=column,
+            climate=amf_ds.coords["CLIMATE_KOEPPEN"].sel(site=column).values,
+            veg=amf_ds.coords["IGBP"].sel(site=column).values,
+        )
+    )
+    acf_col = acf_data[column].dropna()
+    acf_times = acf_col.index.values.astype("m8[h]").astype(float) / HOURS_PER_DAY
+    acf_col.plot(ax=axes[0])
+    axes[0].set_xticks(pd.timedelta_range(start=0, freq="365D", periods=6)
+                  .to_numpy().astype("i8").astype(float))
+    axes[0].set_xticks(pd.timedelta_range(start=0, freq="91D", periods=24)
+                  .to_numpy().astype("i8").astype(float), minor=True)
+    axes[0].set_xticklabels(["{num:d} years".format(num=num)
+                        for num in range(6)])
+    ax.set_ylim(-1, 1)
+    for ax, fit_name in zip(
+        axes[1:], 
+        FIT_ERROR.loc[(column, slice(None)), :].sort_values("weighted_error").index.get_level_values(1)
+    ):
+        ax.plot(
+            acf_col.index,
+            eval(fit_name)(acf_times, **COEF_DATA.loc[(column, fit_name), :].dropna())
+        )
+        ax.set_title(fit_name)
+        ax.set_xticks(pd.timedelta_range(start=0, freq="365D", periods=6)
+                      .to_numpy().astype("i8").astype(float))
+        ax.set_xticks(pd.timedelta_range(start=0, freq="91D", periods=24)
+                      .to_numpy().astype("i8").astype(float), minor=True)
+        ax.set_xticklabels(["{num:d} years".format(num=num)
+                            for num in range(6)])
+        ax.set_ylim(-1, 1)
+    fig.tight_layout()
+    fig.subplots_adjust(top=.9)
+    fig.savefig("{column:s}-top-fits.pdf".format(column=column))
+    plt.close(fig)
+
+################################################################################
+
+BEST_FITS = FIT_ERROR.sort_values(["Site", "weighted_error"]).groupby("Site").head(1).reset_index(level=1)
+BEST_FITS["Correlation function"] = pd.Categorical(BEST_FITS["Correlation function"])
+BEST_FITS.groupby("Correlation function").count()["weighted_error"].to_csv(
+    "ameriflux-minus-casa-hour-towers-correlation-function-best-fit-counts.csv"
+)
+
+TOWER_NAMES = BEST_FITS.index
+TOWER_CORR_FUNS = BEST_FITS["Correlation function"]
+AMF_VARS_TO_USE = ["IGBP", "LOCATION_LAT", "LOCATION_LONG", "STATE",
+                   "UTC_OFFSET", "CLIMATE_KOEPPEN", "FLUX_MEASUREMENTS_METHOD",
+                   "LOCATION_ELEV", "TERRAIN", "ASPECT"]
+CASA_VARS_TO_USE = ["Vegetation", "Mean_Temp", "Mean_Preci", "Elevation",
+                    "Longitude", "Years_of_D", "Latitude", "Climate_Cl"]
+
+amf_var_data = amf_ds[AMF_VARS_TO_USE].sel(site=TOWER_NAMES).to_dataframe()[AMF_VARS_TO_USE]
+amf_var_data["LOCATION_ELEV"] = amf_var_data["LOCATION_ELEV"].astype(np.float32)
+for column in amf_var_data:
+    if amf_var_data[column].dtype == object:
+        amf_var_data[column] = pd.Categorical(amf_var_data[column])
+
+casa_var_data = casa_ds[CASA_VARS_TO_USE].set_index(
+    ameriflux_tower_location="Site_Id"
+).sel(ameriflux_tower_location=TOWER_NAMES).to_dataframe()[CASA_VARS_TO_USE]
+for column in ["Vegetation", "Climate_Cl"]:
+    casa_var_data[column] = pd.Categorical(casa_var_data[column])
+
+best_fits_with_explanatory_data = pd.concat((BEST_FITS, amf_var_data, casa_var_data), axis=1)
+best_fits_with_explanatory_data.to_csv(
+    "ameriflux-minus-casa-half-hour-towers-correlation-functions-best-fits-explanatory-vars.csv"
+)
+
+import patsy
+design_matrix = patsy.dmatrix(
+    "0 + IGBP + LOCATION_LAT + LOCATION_LONG + CLIMATE_KOEPPEN + FLUX_MEASUREMENTS_METHOD"
+    " + LOCATION_ELEV + Mean_Temp + Mean_Preci + Vegetation + Climate_Cl",
+    best_fits_with_explanatory_data
+)
+sparse_explanatory_data = pd.DataFrame(
+    design_matrix,
+    columns=design_matrix.design_info.column_names,
+    index=best_fits_with_explanatory_data.index,
+    dtype=pd.SparseDtype(np.float32, 0.0)
+)
+
+import sklearn.tree
+tree_model = sklearn.tree.DecisionTreeClassifier(max_depth=3)
+classifier = tree_model.fit(sparse_explanatory_data, TOWER_CORR_FUNS)
 
 for column in difference_df_rect:
     # # Calculate variograms directly.  Very slow with lots of data
