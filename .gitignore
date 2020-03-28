@@ -1,0 +1,16 @@
+*~
+*.stackdump
+
+*.pdf
+*.png
+*.gv
+
+*.csv
+*.xlsx
+*.nc4
+
+*.dll
+*.c
+
+__pycache__
+build
