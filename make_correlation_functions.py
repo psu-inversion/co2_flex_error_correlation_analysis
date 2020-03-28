@@ -8,7 +8,9 @@ import bottleneck as bn
 HOURS_PER_DAY = 24.
 DAYS_PER_DAY = 1.
 DAYS_PER_WEEK = 7.
+DAYS_PER_FORTNIGHT = 14.
 DAYS_PER_YEAR = 365.2425
+DAYS_PER_DECADE = 10 * DAYS_PER_YEAR
 
 PI_OVER_DAY = np.pi / DAYS_PER_DAY
 TWO_PI_OVER_DAY = 2 * PI_OVER_DAY
@@ -60,9 +62,9 @@ def {function_name:s}(
 ):
     result = np.empty_like(tdata)
     Tec /= HOURS_PER_DAY
-    Td *= DAYS_PER_WEEK
-    Ta *= DAYS_PER_YEAR
-    To *= DAYS_PER_WEEK
+    Td *= DAYS_PER_FORTNIGHT
+    Ta *= DAYS_PER_DECADE
+    To *= DAYS_PER_FORTNIGHT
     exp = np.exp
     cos = np.cos
     sin = np.sin
@@ -87,9 +89,9 @@ cpdef np.ndarray[floating_type, ndim=1] {function_name:s}(
 ):
     cdef np.ndarray[floating_type, ndim=1] result = np.empty_like(tdata)
     Tec /= HOURS_PER_DAY
-    Td *= DAYS_PER_WEEK
-    Ta *= DAYS_PER_YEAR
-    To *= DAYS_PER_WEEK
+    Td *= DAYS_PER_FORTNIGHT
+    Ta *= DAYS_PER_DECADE
+    To *= DAYS_PER_FORTNIGHT
     exp = np.exp
     cos = np.cos
     sin = np.sin
@@ -116,9 +118,9 @@ cpdef floating_type[::1] {function_name:s}(
     cdef floating_type[::1] result = np.empty_like(tdata_base)
     cdef long int i = 0
     Tec /= HOURS_PER_DAY
-    Td *= DAYS_PER_WEEK
-    Ta *= DAYS_PER_YEAR
-    To *= DAYS_PER_WEEK
+    Td *= DAYS_PER_FORTNIGHT
+    Ta *= DAYS_PER_DECADE
+    To *= DAYS_PER_FORTNIGHT
     cdef float_fun exp = cyexp
     cdef float_fun cos = cycos
     cdef float_fun sin = cysin
@@ -135,9 +137,9 @@ cpdef floating_type[::1] {function_name:s}(
 """
 
 NUMEXPR_EXPRESSION_SCRIPT = (
-    "daily_coef * ({daily_form:s} * {daily_modulation_form:s}) * exp(-tdata / (Td * DAYS_PER_WEEK)) + "
-    "ann_coef * {annual_form:s} * exp(-tdata / (Ta * DAYS_PER_YEAR)) + "
-    "resid_coef * exp(-tdata / (To * DAYS_PER_WEEK)) + "
+    "daily_coef * ({daily_form:s} * {daily_modulation_form:s}) * exp(-tdata / (Td * DAYS_PER_FORTNIGHT)) + "
+    "ann_coef * {annual_form:s} * exp(-tdata / (Ta * DAYS_PER_DECADE)) + "
+    "resid_coef * exp(-tdata / (To * DAYS_PER_FORTNIGHT)) + "
     "ec_coef * exp(-tdata / Tec * HOURS_PER_DAY)"
 )
 NUMEXPR_FUNCTION_SCRIPT = """
@@ -180,7 +182,7 @@ from libc cimport math
 
 import numpy as np
 cimport numpy as np
-import numexpr 
+import numexpr
 
 cdef extern from "<math.h>" nogil:
     float sinf(float x)
@@ -214,7 +216,9 @@ cdef floating_type cyexp(floating_type x):
 cdef float HOURS_PER_DAY = 24.
 cdef float DAYS_PER_DAY = 1.
 cdef float DAYS_PER_WEEK = 7.
+cdef float DAYS_PER_FORTNIGHT = 14.
 cdef float DAYS_PER_YEAR = 365.2425
+cdef float DAYS_PER_DECADE = DAYS_PER_YEAR * 10
 
 cdef float HOURS_PER_YEAR = HOURS_PER_DAY * DAYS_PER_YEAR
 
@@ -229,7 +233,9 @@ cdef float FOUR_PI_OVER_YEAR = 2 * TWO_PI_OVER_YEAR
 cdef dict GLOBAL_DICT = {
     "HOURS_PER_DAY": HOURS_PER_DAY,
     "DAYS_PER_WEEK": DAYS_PER_WEEK,
+    "DAYS_PER_FORTNIGHT": DAYS_PER_FORTNIGHT,
     "DAYS_PER_YEAR": DAYS_PER_YEAR,
+    "DAYS_PER_DECADE": DAYS_PER_DECADE,
     "PI_OVER_DAY": PI_OVER_DAY,
     "TWO_PI_OVER_DAY": TWO_PI_OVER_DAY,
     "FOUR_PI_OVER_DAY": FOUR_PI_OVER_DAY,
@@ -240,12 +246,14 @@ cdef dict GLOBAL_DICT = {
 """)
     out_file_py.write("""
 import numpy as np
-import numexpr 
+import numexpr
 
 HOURS_PER_DAY = 24.
 DAYS_PER_DAY = 1.
 DAYS_PER_WEEK = 7.
+DAYS_PER_FORTNIGHT = 14.
 DAYS_PER_YEAR = 365.2425
+DAYS_PER_DECADE = 10 * DAYS_PER_YEAR
 
 HOURS_PER_YEAR = HOURS_PER_DAY * DAYS_PER_YEAR
 
@@ -260,7 +268,9 @@ FOUR_PI_OVER_YEAR = 2 * TWO_PI_OVER_YEAR
 GLOBAL_DICT = {
     "HOURS_PER_DAY": HOURS_PER_DAY,
     "DAYS_PER_WEEK": DAYS_PER_WEEK,
+    "DAYS_PER_FORTNIGHT": DAYS_PER_FORTNIGHT,
     "DAYS_PER_YEAR": DAYS_PER_YEAR,
+    "DAYS_PER_DECADE": DAYS_PER_DECADE,
     "PI_OVER_DAY": PI_OVER_DAY,
     "TWO_PI_OVER_DAY": TWO_PI_OVER_DAY,
     "FOUR_PI_OVER_DAY": FOUR_PI_OVER_DAY,
