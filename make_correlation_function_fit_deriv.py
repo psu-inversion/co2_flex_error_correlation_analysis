@@ -60,7 +60,9 @@ ctypedef floating_type (*float_fun)(floating_type)
 cdef float HOURS_PER_DAY = 24.
 cdef float DAYS_PER_DAY = 1.
 cdef float DAYS_PER_WEEK = 7.
+cdef float DAYS_PER_FORTNIGHT = 14.
 cdef float DAYS_PER_YEAR = 365.2425
+cdef float DAYS_PER_DECADE = 10 * DAYS_PER_YEAR
 
 cdef float HOURS_PER_YEAR = HOURS_PER_DAY * DAYS_PER_YEAR
 
@@ -75,7 +77,9 @@ cdef float FOUR_PI_OVER_YEAR = 2 * TWO_PI_OVER_YEAR
 cdef dict GLOBAL_DICT = {
     "HOURS_PER_DAY": HOURS_PER_DAY,
     "DAYS_PER_WEEK": DAYS_PER_WEEK,
+    "DAYS_PER_FORTNIGHT": DAYS_PER_FORTNIGHT,
     "DAYS_PER_YEAR": DAYS_PER_YEAR,
+    "DAYS_PER_DECADE": DAYS_PER_DECADE,
     "PI_OVER_DAY": PI_OVER_DAY,
     "TWO_PI_OVER_DAY": TWO_PI_OVER_DAY,
     "FOUR_PI_OVER_DAY": FOUR_PI_OVER_DAY,
