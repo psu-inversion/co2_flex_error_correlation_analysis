@@ -174,6 +174,76 @@ class PartForm(Enum):
             time=part.get_period(),
         )
 
+    def get_derivative(self, part):
+        """Get the expression for this form in that part.
+
+        Parameters
+        ----------
+        part: CorrelationPart
+
+        Returns
+        -------
+        expression: list of str
+        """
+        if self == PartForm.NONE:
+            if part.is_modulation():
+                return []
+            return []
+        if part == CorrelationPart.DAILY:
+            prefix = "{0:s}_coef * exp(-tdata / ({0:s}_timescale * DAYS_PER_FORTNIGHT))"
+            prefix_parts = [
+                "exp(-tdata / ({0:s}_timescale * DAYS_PER_FORTNIGHT))",
+                "{0:s}_coef * exp(-tdata / ({0:s}_timescale * DAYS_PER_FORTNIGHT)) * "
+                "tdata / (DAYS_PER_FORTNIGHT * {0:s}_timescale ** 2)",
+            ]
+        elif part == CorrelationPart.ANNUAL:
+            prefix = "{0:s}_coef * exp(-tdata / ({0:s}_timescale * DAYS_PER_DECADE))"
+            prefix_parts = [
+                "exp(-tdata / ({0:s}_timescale * DAYS_PER_FORTNIGHT))",
+                "{0:s}_coef * exp(-tdata / ({0:s}_timescale * DAYS_PER_FORTNIGHT)) * "
+                "tdata / (DAYS_PER_FORTNIGHT * {0:s}_timescale ** 2)",
+            ]
+        if self == PartForm.COSINE:
+            main = (
+                "((1 - {0:s}_coef1 - {0:s}_coef2) + "
+                "{0:s}_coef1 * cos(TWO_PI_OVER_{time:s} * tdata) + "
+                "{0:s}_coef2 * cos(FOUR_PI_OVER_{time:s} * tdata))"
+            )
+            main_parts = [
+                "(-1 + cos(TWO_PI_OVER_{time:s} * tdata))",
+                "(-1 + cos(FOUR_PI_OVER_{time:s} * tdata))",
+            ]
+        elif self == PartForm.PERIODIC:
+            main = (
+                "exp(-(sin(PI_OVER_{time:s} * tdata) / {0:s}_width) ** 2)"
+            )
+            main_parts = [
+                "exp(-(sin(PI_OVER_{time:s} * tdata) / {0:s}_width) ** 2) * "
+                "2 * sin(PI_OVER_{time:s} * tdata) ** 2 / {0:s}_width ** 3",
+            ]
+
+        if not part.is_modulation():
+            # The exponential die-off is only for the main
+            # correlations.  Including it also on the modulation would
+            # introduce problems with how to tell the two apart.
+            prefix_parts = [
+                "{piece:s} * {main:s}".format(piece=piece, main=main)
+                for piece in prefix_parts
+            ]
+            main_parts = [
+                "{prefix:s} * {piece:s}".format(prefix=prefix, piece=piece)
+                for piece in main_parts
+            ]
+            main = "{0:s} * {1:s}".format(prefix, main)
+
+        return [
+            piece.format(
+                part.name.lower(),
+                time=part.get_period(),
+            )
+            for piece in main_parts
+        ]
+
 
 def is_valid_combination(part_daily, part_day_mod, part_annual):
     """Find whether this is a valid combination.
