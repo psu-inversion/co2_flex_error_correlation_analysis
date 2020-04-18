@@ -42,25 +42,25 @@ cdef extern from "<math.h>" nogil:
     float cosf(float x)
     float expf(float x)
 
-cdef floating_type cycos(floating_type x):
+cdef inline floating_type cycos(floating_type x) nogil:
     if floating_type is float:
         return cosf(x)
     elif floating_type is double:
         return math.cos(x)
 
-cdef floating_type cysin(floating_type x):
+cdef inline floating_type cysin(floating_type x) nogil:
     if floating_type is float:
         return sinf(x)
     elif floating_type is double:
         return math.sin(x)
 
-cdef floating_type cyexp(floating_type x):
+cdef inline floating_type cyexp(floating_type x) nogil:
     if floating_type is float:
         return expf(x)
     elif floating_type is double:
         return math.exp(x)
 
-ctypedef floating_type (*float_fun)(floating_type)
+ctypedef floating_type (*float_fun)(floating_type) nogil
 
 cdef float HOURS_PER_DAY = 24.
 cdef float DAYS_PER_DAY = 1.
@@ -133,7 +133,8 @@ def {function_name:s}_loop(
     floating_type[::1] pair_count not None,
 ):
     cdef floating_type weighted_fit = 0.0
-    cdef floating_type[::1] deriv = np.zeros_like(parameters, dtype=np.float32)
+    cdef floating_type deriv[{n_parameters:d}]
+    cdef floating_type here_deriv[{n_parameters:d}]
     cdef long int n_parameters = {n_parameters:d}
 
 {params_from_parameters:s}
@@ -145,6 +146,7 @@ def {function_name:s}_loop(
     cdef floating_type ann_corr
     cdef floating_type resid_corr, ec_corr
     cdef floating_type here_corr
+    cdef floating_type deriv_common
 
     cdef float_fun exp = cyexp
     cdef float_fun cos = cycos
@@ -152,6 +154,9 @@ def {function_name:s}_loop(
 
     resid_timescale *= DAYS_PER_FORTNIGHT
     ec_timescale /= HOURS_PER_DAY
+
+    for j in range(n_parameters):
+        deriv[j] = 0.0
 
     for i in range(len(tdata_base)):
         tdata = tdata_base[i]
@@ -170,21 +175,24 @@ def {function_name:s}_loop(
         if resid_timescale > 0:
             resid_corr = resid_coef * exp(-tdata / resid_timescale)
             here_corr += resid_corr
-            deriv[n_parameters - 4] += exp(-tdata / resid_timescale)
-            deriv[n_parameters - 3] += resid_corr * tdata / resid_timescale ** 2
+            here_deriv[n_parameters - 4] = exp(-tdata / resid_timescale)
+            here_deriv[n_parameters - 3] = resid_corr * tdata / resid_timescale ** 2
 
         if ec_timescale > 0:
             ec_corr = ec_coef * exp(-tdata / ec_timescale)
             here_corr += ec_corr
-            deriv[n_parameters - 2] += exp(-tdata / ec_timescale)
-            deriv[n_parameters - 1] += ec_corr * tdata / ec_timescale ** 2
+            here_deriv[n_parameters - 2] = exp(-tdata / ec_timescale)
+            here_deriv[n_parameters - 1] = ec_corr * tdata / ec_timescale ** 2
 
         weighted_fit += pair_count[i] * (here_corr - empirical_correlogram[i]) ** 2
+        deriv_common = pair_count[i] * 2 * (here_corr - empirical_correlogram[i])
+        for j in range(n_parameters):
+            deriv[j] += deriv_common * here_deriv[j]
 
     deriv[n_parameters - 3] *= DAYS_PER_FORTNIGHT
     deriv[n_parameters - 1] /= HOURS_PER_DAY
 
-    return weighted_fit, np.asarray(deriv, dtype=np.float64)
+    return weighted_fit, np.asarray(<floating_type[:n_parameters]>deriv).astype(np.float64)
 """.format(
     function_name="_".join([
         "{0:s}{1:s}".format(
@@ -205,7 +213,7 @@ def {function_name:s}_loop(
     ),
     annual_form=forms[2].get_expression(CorrelationPart.ANNUAL),
     accum_day_deriv="\n        ".join(
-        "deriv[{i:d}] += {deriv_piece:s} * dm_corr".format(
+        "here_deriv[{i:d}] = {deriv_piece:s} * dm_corr".format(
             i=i, deriv_piece=deriv_piece
         )
         for i, deriv_piece in enumerate(
@@ -213,22 +221,22 @@ def {function_name:s}_loop(
         )
     ),
     accum_dm_deriv="\n        ".join(
-        "deriv[{i:d}] += daily_corr * {deriv_piece:s}".format(
+        "here_deriv[{i:d}] = daily_corr * {deriv_piece:s}".format(
             i=i, deriv_piece=deriv_piece
         )
         for i, deriv_piece in enumerate(
                 forms[1].get_derivative(CorrelationPart.DAILY_MODULATION),
-                len(forms[0].get_derivative(CorrelationPart.DAILY))
+                len(forms[0].get_parameters(CorrelationPart.DAILY))
         )
     ),
     accum_ann_deriv="\n        ".join(
-        "deriv[{i:d}] += {deriv_piece:s}".format(
+        "here_deriv[{i:d}] = {deriv_piece:s}".format(
             i=i, deriv_piece=deriv_piece
         )
         for i, deriv_piece in enumerate(
                 forms[2].get_derivative(CorrelationPart.ANNUAL),
-                len(forms[0].get_derivative(CorrelationPart.DAILY)) +
-                len(forms[1].get_derivative(CorrelationPart.DAILY_MODULATION))
+                len(forms[0].get_parameters(CorrelationPart.DAILY)) +
+                len(forms[1].get_parameters(CorrelationPart.DAILY_MODULATION))
         )
     ),
 ))
