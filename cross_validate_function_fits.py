@@ -281,13 +281,13 @@ for site_name in AMERIFLUX_MINUS_CASA_DATA.indexes["site"]:
                  for part, form in zip(CorrelationPart, forms)
              ])
             print(func_short_name, flush=True)
-            name_to_optimize = "{fun_name}_ne".format(fun_name=func_short_name)
+            name_to_optimize = "{fun_name}_loop".format(fun_name=func_short_name)
             fun_to_optimize = getattr(
                 flux_correlation_function_fits, name_to_optimize
             )
             fun_to_check = getattr(
                 flux_correlation_function_fits,
-                "{fun_name}_loop".format(fun_name=func_short_name),
+                "{fun_name}_ne".format(fun_name=func_short_name),
             )
 
             # Set up parameters
@@ -343,7 +343,7 @@ for site_name in AMERIFLUX_MINUS_CASA_DATA.indexes["site"]:
                 acf_lags_validate,
                 corr_data_validate["acf"].astype(np.float32).values,
                 corr_data_validate["pair_counts"].astype(np.float32).values,
-            )
+            )[0]
             CORRELATION_FIT_ERROR.loc[
                 (site_name, func_short_name),
                 ("other_function", "weighted_error_in_sample"),
@@ -352,7 +352,7 @@ for site_name in AMERIFLUX_MINUS_CASA_DATA.indexes["site"]:
                 acf_lags_train,
                 corr_data_train["acf"].astype(np.float32).values,
                 corr_data_train["pair_counts"].astype(np.float32).values,
-            )[0]
+            )
             CORRELATION_FIT_ERROR.loc[
                 (site_name, func_short_name),
                 ("other_function", "weighted_error_out_of_sample"),
@@ -361,8 +361,8 @@ for site_name in AMERIFLUX_MINUS_CASA_DATA.indexes["site"]:
                 acf_lags_validate,
                 corr_data_validate["acf"].astype(np.float32).values,
                 corr_data_validate["pair_counts"].astype(np.float32).values,
-            )[0]
+            )
 
-COEF_DATA.to_csv("coefficient-data-ne.csv")
-COEF_VAR_DATA.to_csv("coefficient-variance-data-ne.csv")
-CORRELATION_FIT_ERROR.to_csv("correlation-fit-error-ne.csv")
+COEF_DATA.to_csv("coefficient-data-loop.csv")
+COEF_VAR_DATA.to_csv("coefficient-variance-data-loop.csv")
+CORRELATION_FIT_ERROR.to_csv("correlation-fit-error-loop.csv")
