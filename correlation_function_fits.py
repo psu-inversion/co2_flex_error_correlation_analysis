@@ -199,9 +199,9 @@ class PartForm(Enum):
         elif part == CorrelationPart.ANNUAL:
             prefix = "{0:s}_coef * exp(-tdata / ({0:s}_timescale * DAYS_PER_DECADE))"
             prefix_parts = [
-                "exp(-tdata / ({0:s}_timescale * DAYS_PER_FORTNIGHT))",
-                "{0:s}_coef * exp(-tdata / ({0:s}_timescale * DAYS_PER_FORTNIGHT)) * "
-                "tdata / (DAYS_PER_FORTNIGHT * {0:s}_timescale ** 2)",
+                "exp(-tdata / ({0:s}_timescale * DAYS_PER_DECADE))",
+                "{0:s}_coef * exp(-tdata / ({0:s}_timescale * DAYS_PER_DECADE)) * "
+                "tdata / (DAYS_PER_DECADE * {0:s}_timescale ** 2)",
             ]
         if self == PartForm.COSINE:
             main = (
@@ -235,6 +235,9 @@ class PartForm(Enum):
                 for piece in main_parts
             ]
             main = "{0:s} * {1:s}".format(prefix, main)
+            # Put everything in the same list.  Make sure it's in the
+            # same order as the reported parameter list.
+            main_parts = prefix_parts + main_parts
 
         return [
             piece.format(
