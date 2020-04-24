@@ -28,6 +28,7 @@ with open(OUT_FILE_NAME, "w") as out_file:
 # cython: cdivision=True
 # cython: wraparound=False
 from libc cimport math
+from cython.view cimport array as cvarray
 
 import numpy as np
 cimport numpy as np
@@ -98,7 +99,7 @@ cdef dict GLOBAL_DICT = {
             continue
         print(forms)
         out_file.write("""
-def {func_name:s}_ne(parameters, tdata, empirical_correlogram, pair_count):
+def {func_name:s}_fit_ne(parameters, tdata, empirical_correlogram, pair_count):
     return ne.evaluate(
         "{weighted_sum_expr:s}",
         local_dict={{
@@ -126,7 +127,40 @@ def {func_name:s}_ne(parameters, tdata, empirical_correlogram, pair_count):
 ))
 
         out_file.write("""
-def {function_name:s}_loop(
+def {func_name:s}_curve_ne(
+    tdata,
+{parameters:s}
+):
+    return ne.evaluate(
+        "{full_expr:s}",
+        local_dict={{
+{param_names_from_parameters:s}
+            "tdata": tdata
+        }},
+        global_dict=GLOBAL_DICT,
+    )
+""".format(
+    func_name="_".join([
+        "{0:s}{1:s}".format(
+            part.get_short_name(),
+            form.get_short_name(),
+        )
+        for part, form in zip(CorrelationPart, forms)
+    ]),
+    param_names_from_parameters="".join([
+        "            \"{param_name:s}\": {param_name:s},\n"
+        .format(param_name=param_name)
+        for param_name in get_full_parameter_list(*forms)
+    ]),
+    parameters="".join([
+        "    {param:s},\n".format(param=param_name)
+        for param_name in get_full_parameter_list(*forms)
+    ]),
+    full_expr=get_full_expression(*forms)
+))
+
+        out_file.write("""
+def {function_name:s}_fit_loop(
     np.float64_t[::1] parameters not None,
     floating_type[::1] tdata_base not None,
     floating_type[::1] empirical_correlogram not None,
@@ -234,6 +268,125 @@ def {function_name:s}_loop(
             i=i, deriv_piece=deriv_piece
         )
         for i, deriv_piece in enumerate(
+                forms[2].get_derivative(CorrelationPart.ANNUAL),
+                len(forms[0].get_parameters(CorrelationPart.DAILY)) +
+                len(forms[1].get_parameters(CorrelationPart.DAILY_MODULATION))
+        )
+    ),
+))
+
+        out_file.write("""
+def {function_name:s}_curve_loop(
+    floating_type[::1] tdata_base not None,
+{parameters:s}
+):
+    cdef floating_type weighted_fit = 0.0
+    cdef long int n_times = len(tdata_base)
+    if floating_type == np.float32_t:
+        typecode = "f"
+    elif floating_type == np.float64_t:
+        typecode = "d"
+    cdef floating_type[::1] curve = cvarray(
+        shape=(n_times,),
+        itemsize=sizeof(floating_type),
+        format=typecode,
+    )
+    cdef floating_type[:, ::1] deriv = cvarray(
+        shape=(n_times, {n_parameters:d}),
+        itemsize=sizeof(floating_type),
+        format=typecode,
+    )
+    cdef long int n_parameters = {n_parameters:d}
+
+    cdef long int i = 0, j = 0
+
+    cdef floating_type tdata
+    cdef floating_type daily_corr, dm_corr
+    cdef floating_type ann_corr
+    cdef floating_type resid_corr, ec_corr
+    cdef floating_type here_corr
+    cdef floating_type deriv_common
+
+    cdef float_fun exp = cyexp
+    cdef float_fun cos = cycos
+    cdef float_fun sin = cysin
+
+    resid_timescale *= DAYS_PER_FORTNIGHT
+    ec_timescale /= HOURS_PER_DAY
+
+    for i in range(n_times):
+        tdata = tdata_base[i]
+        here_corr = 0.0
+
+        daily_corr = {daily_form:s}
+        dm_corr = {daily_modulation_form:s}
+        here_corr += daily_corr * dm_corr
+        {accum_day_deriv:s}
+        {accum_dm_deriv:s}
+
+        ann_corr = {annual_form:s}
+        here_corr += ann_corr
+        {accum_ann_deriv:s}
+
+        if resid_timescale > 0:
+            resid_corr = resid_coef * exp(-tdata / resid_timescale)
+            here_corr += resid_corr
+            deriv[i][n_parameters - 4] = exp(-tdata / resid_timescale)
+            deriv[i][n_parameters - 3] = resid_corr * tdata / resid_timescale ** 2 * DAYS_PER_FORTNIGHT
+
+        if ec_timescale > 0:
+            ec_corr = ec_coef * exp(-tdata / ec_timescale)
+            here_corr += ec_corr
+            deriv[i][n_parameters - 2] = exp(-tdata / ec_timescale)
+            deriv[i][n_parameters - 1] = ec_corr * tdata / ec_timescale ** 2 / HOURS_PER_DAY
+
+        curve[i] = here_corr
+
+    return (
+        np.asarray(curve),
+        np.asarray(deriv),
+    )
+""".format(
+    function_name="_".join([
+        "{0:s}{1:s}".format(
+            part.get_short_name(),
+            form.get_short_name(),
+        )
+        for part, form in zip(CorrelationPart, forms)
+    ]),
+    n_parameters=len(get_full_parameter_list(*forms)),
+    parameters="".join([
+        "    floating_type {param_name:s},\n"
+        .format(i=i, param_name=param_name)
+        for i, param_name in enumerate(get_full_parameter_list(*forms))
+    ]),
+    daily_form=forms[0].get_expression(CorrelationPart.DAILY),
+    daily_modulation_form=forms[1].get_expression(
+        CorrelationPart.DAILY_MODULATION
+    ),
+    annual_form=forms[2].get_expression(CorrelationPart.ANNUAL),
+    accum_day_deriv="\n        ".join(
+        "deriv[i][{j:d}] = {deriv_piece:s} * dm_corr".format(
+            j=j, deriv_piece=deriv_piece
+        )
+        for j, deriv_piece in enumerate(
+                forms[0].get_derivative(CorrelationPart.DAILY)
+        )
+    ),
+    accum_dm_deriv="\n        ".join(
+        "deriv[i][{j:d}] = daily_corr * {deriv_piece:s}".format(
+            j=j, deriv_piece=deriv_piece
+        )
+        for j, deriv_piece in enumerate(
+                forms[1].get_derivative(CorrelationPart.DAILY_MODULATION),
+                len(forms[0].get_parameters(CorrelationPart.DAILY))
+        )
+    ),
+    accum_ann_deriv="\n        ".join(
+        "deriv[i][{j:d}] = {deriv_piece:s}".format(
+            j=j, deriv_piece=deriv_piece
+        )
+        for j, deriv_piece in enumerate(
                 forms[2].get_derivative(CorrelationPart.ANNUAL),
                 len(forms[0].get_parameters(CorrelationPart.DAILY)) +
                 len(forms[1].get_parameters(CorrelationPart.DAILY_MODULATION))
