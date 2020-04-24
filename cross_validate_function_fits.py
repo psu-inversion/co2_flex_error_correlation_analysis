@@ -267,6 +267,8 @@ for site_name in AMERIFLUX_MINUS_CASA_DATA.indexes["site"]:
         ]
         acf_lags_train = timedelta_index_to_floats(corr_data_train.index)
         acf_lags_validate = timedelta_index_to_floats(corr_data_validate.index)
+        acf_weights_train = 1. / np.sqrt(corr_data_train["pair_counts"])
+        acf_weights_validate = 1. / np.sqrt(corr_data_validate["pair_counts"])
 
         for forms in itertools.product(PartForm, PartForm, PartForm):
             if not is_valid_combination(*forms):
@@ -281,13 +283,13 @@ for site_name in AMERIFLUX_MINUS_CASA_DATA.indexes["site"]:
                  for part, form in zip(CorrelationPart, forms)
              ])
             print(func_short_name, flush=True)
-            name_to_optimize = "{fun_name}_loop".format(fun_name=func_short_name)
+            name_to_optimize = "{fun_name}_fit_loop".format(fun_name=func_short_name)
             fun_to_optimize = getattr(
                 flux_correlation_function_fits, name_to_optimize
             )
             fun_to_check = getattr(
                 flux_correlation_function_fits,
-                "{fun_name}_ne".format(fun_name=func_short_name),
+                "{fun_name}_fit_ne".format(fun_name=func_short_name),
             )
 
             # Set up parameters
@@ -306,9 +308,35 @@ for site_name in AMERIFLUX_MINUS_CASA_DATA.indexes["site"]:
             )
 
             # Try the optimization
+            # Use curve_fit to fine-tune
+            curve_and_deriv = getattr(
+                flux_correlation_function_fits,
+                "{fun_name:s}_curve_loop".format(fun_name=func_short_name),
+            )
+            def curve_deriv(tdata, *params):
+                return curve_and_deriv(tdata, *params)[1]
+            try:
+                opt_params, param_cov = scipy.optimize.curve_fit(
+                    getattr(
+                        flux_correlation_function_fits,
+                        "{fun_name:s}_curve_ne".format(fun_name=func_short_name),
+                    ),
+                    acf_lags_train.astype(np.float32),
+                    corr_data_train["acf"].astype(np.float32).values,
+                    starting_params.astype(np.float32),
+                    acf_weights_train.astype(np.float32),
+                    bounds=(
+                        lower_bounds.astype(np.float32),
+                        upper_bounds.astype(np.float32),
+                    ),
+                    jac=curve_deriv,
+                )
+            except RuntimeError:
+                print("Curve fit failed, next function")
+                continue
             opt_res = scipy.optimize.minimize(
                 fun_to_optimize,
-                starting_params,
+                opt_params,
                 (
                     acf_lags_train,
                     corr_data_train["acf"].astype(np.float32).values,
