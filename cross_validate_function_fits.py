@@ -13,6 +13,7 @@ import itertools
 
 import numpy as np
 import scipy.optimize
+import matplotlib.pyplot as plt
 import pandas as pd
 import xarray
 
@@ -390,6 +391,56 @@ for site_name in AMERIFLUX_MINUS_CASA_DATA.indexes["site"]:
                 corr_data_validate["acf"].astype(np.float32).values,
                 corr_data_validate["pair_counts"].astype(np.float32).values,
             )
+    # Done fits, make plots.
+    fig, axes = plt.subplots(4, 2, sharey=True, sharex=True)
+    fig.suptitle("Correlation fit for {site:s}".format(site=site_name))
+    axes[0, 0].set_title("Training data")
+    axes[0, 1].set_title("Validation data")
+    axes[0, 0].set_ylabel("Empirical\nCorrelogram")
+    for ax in axes[1:, 0]:
+        ax.set_ylabel("Fitted\nCorrelogram")
+    axes[0, 0].plot(acf_lags_train, corr_data_train["acf"])
+    axes[0, 1].plot(acf_lags_validate, corr_data_validate["acf"])
+    axes[0, 0].set_ylim(-1, 1)
+    max_lag = max(acf_lags_train[-1], acf_lags_validate[-1])
+    axes[0, 0].set_xlim(0, max_lag)
+    xticks = np.arange(0, max_lag, 365)
+    for ax in axes.flat:
+        ax.set_xticks(xticks)
+    sorted_fits = CORRELATION_FIT_ERROR.loc[
+        (site_name, slice(None)), ("function_optimized", slice(None))
+    ].sort_values(
+        ("function_optimized", "weighted_error_out_of_sample")
+    ).dropna(how="all")
+    print(sorted_fits.iloc[:3, :])
+    for i, fun_name in enumerate(sorted_fits.iloc[:3, :].index.get_level_values(1), 1):
+        print(fun_name)
+        curve_fun = getattr(
+            flux_correlation_function_fits,
+            "{fun_name:s}_curve_ne".format(fun_name=fun_name),
+        )
+        axes[i, 0].plot(
+            acf_lags_train,
+            curve_fun(
+                acf_lags_train,
+                **COEF_DATA.loc[(site_name, fun_name)].dropna(),
+            ),
+        )
+        axes[i, 1].plot(
+            acf_lags_validate,
+            curve_fun(
+                acf_lags_validate,
+                **COEF_DATA.loc[(site_name, fun_name)].dropna(),
+            ),
+        )
+        axes[i, 0].set_ylabel(fun_name)
+    fig.tight_layout()
+    fig.subplots_adjust(top=0.88)
+    fig.savefig(
+        "{site_name:s}-cross-validation-function-fits.png"
+        .format(site_name=site_name)
+    )
+    plt.close(fig)
 
 COEF_DATA.to_csv("coefficient-data-loop.csv")
 COEF_VAR_DATA.to_csv("coefficient-variance-data-loop.csv")
