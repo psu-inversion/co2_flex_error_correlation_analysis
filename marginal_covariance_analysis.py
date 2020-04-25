@@ -43,16 +43,19 @@ PI_OVER_YEAR = np.pi / DAYS_PER_YEAR
 TWO_PI_OVER_YEAR = 2 * PI_OVER_YEAR
 FOUR_PI_OVER_YEAR = 4 * PI_OVER_YEAR
 
+############################################################
+# Read in flux data
 amf_ds = xarray.open_dataset(
     "/abl/s0/Continent/dfw5129/ameriflux_netcdf/"
     "AmeriFlux_single_value_per_tower_hour_data.nc4"
 )
 casa_ds = xarray.open_mfdataset(
     ("/mc1s2/s4/dfw5129/casa_downscaling/"
-     "200?-??_downscaled_CASA_L2_Ensemble_Mean_Biogenic_NEE_Ameriflux.nc4"),
+     "20??-??_downscaled_CASA_L2_Ensemble_Mean_Biogenic_NEE_Ameriflux.nc4"),
     combine="by_coords"
 )
 
+# Pull out matching flux data
 sites_in_both = sorted(set(casa_ds.coords["Site_Id"].values) &
                        set(amf_ds.coords["site"].values))
 times_in_both = sorted(set(casa_ds.coords["time"].values) &
@@ -68,6 +71,21 @@ casa_data = casa_ds["NEE"].set_index(
 ).sel(
     ameriflux_tower_location=amf_data.coords["site"], time=amf_data.coords["TIMESTAMP_START"]
 ).dropna("data_point")
+
+matching_data_ds = xarray.Dataset(
+    {"ameriflux_fluxes": amf_data,
+     "casa_fluxes": casa_data},
+).unstack("data_point")
+encoding = {name: {"_FillValue": -99, "zlib": True}
+            for name in matching_data_ds.data_vars}
+encoding.update({name: {"_FillValue": None}
+                 for name in matching_data_ds.coords})
+matching_data_ds.to_netcdf(
+    "ameriflux-and-casa-matching-data.nc4",
+    encoding=encoding
+)
+
+# Find differences
 difference = (amf_data - casa_data).dropna("data_point")
 
 coords = np.empty((difference.shape[0], 3), dtype=np.float32)
