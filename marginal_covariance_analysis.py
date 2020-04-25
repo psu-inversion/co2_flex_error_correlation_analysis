@@ -4,6 +4,7 @@
 """Find marginal covariances in space and time."""
 from __future__ import print_function, division
 import itertools
+import calendar
 import datetime
 import inspect
 
@@ -21,12 +22,21 @@ from statsmodels.tools.eval_measures import aic, aicc, bic, hqic
 from bottleneck import nansum
 # import pymc3 as pm
 
+import correlation_function_fits
+from correlation_function_fits import (
+    CorrelationPart, PartForm,
+    is_valid_combination, get_full_parameter_list
+)
+from correlation_utils import count_pairs
+import flux_correlation_function_fits
+
 MINUTES_PER_HOUR = 60
 HOURS_PER_DAY = 24
 MINUTES_PER_DAY = MINUTES_PER_HOUR * HOURS_PER_DAY
 DAYS_PER_DAY = 1
 DAYS_PER_YEAR = 365.2425
 DAYS_PER_WEEK = 7
+MONTHS_PER_YEAR = 12
 
 GLOBE = ccrs.Globe(semimajor_axis=6370000, semiminor_axis=6370000)
 PROJECTION = ccrs.LambertConformal(
@@ -120,17 +130,38 @@ hour_data = np.column_stack([coords, values.astype(np.float32)])
 hour_df = pd.DataFrame(hour_data, columns=["time_days", "x_km", "y_km", "flux_diff_umol_m2_s"])
 hour_df.to_csv("ameriflux_minus_casa_hour_towers.csv")
 
+############################################################
+# Find distances between all pairs of points
 # Will be in meters
 distance_matrix = pd.DataFrame(
     index=amf_ds.indexes["site"],
     columns=amf_ds.indexes["site"],
     dtype=np.float64
 )
+vegtype_match_matrix = pd.DataFrame(
+    index=amf_ds.indexes["site"],
+    columns=amf_ds.indexes["site"],
+    dtype=bool
+)
+koeppen_match_matrix = pd.DataFrame(
+    index=amf_ds.indexes["site"],
+    columns=amf_ds.indexes["site"],
+    dtype=bool
+)
 site_coords = amf_ds.coords["site"]
 for site1, site2 in itertools.product(site_coords, site_coords):
-    distance_matrix.loc[site1.values[()], site2.values[()]] = GEOD.line_length(
+    site1_name = site1.values[()]
+    site2_name = site2.values[()]
+    distance_matrix.loc[site1_name, site2_name] = GEOD.line_length(
         [site1.coords["LOCATION_LONG"], site2.coords["LOCATION_LONG"]],
         [site1.coords["LOCATION_LAT"], site2.coords["LOCATION_LAT"]]
+    )
+    vegtype_match_matrix.loc[site1_name, site2_name] = (
+        amf_ds.coords["IGBP"].sel(site=site1_name) == amf_ds.coords["IGBP"].sel(site=site2_name)
+    )
+    koeppen_match_matrix.loc[site1_name, site2_name] = (
+        amf_ds.coords["CLIMATE_KOEPPEN"].sel(site=site1_name) ==
+        amf_ds.coords["CLIMATE_KOEPPEN"].sel(site=site2_name)
     )
 
 # Convert distance to kilometers
@@ -138,9 +169,14 @@ for site1, site2 in itertools.product(site_coords, site_coords):
 distance_matrix /= 1000
 distance_matrix.to_csv("ameriflux-hour-towers-distance-matrix-km.csv")
 
+############################################################
+# Make a times-by-sites array of the differences
 difference_df_rect = difference.to_dataframe(
     name="ameriflux_minus_casa_hour_towers_umol_m2_s"
 )["ameriflux_minus_casa_hour_towers_umol_m2_s"].unstack(0)
+difference_df_rect.to_csv(
+    "ameriflux-minus-casa-hour-towers-difference-data-rect.csv"
+)
 
 difference_xarray = difference.to_dataset(name="ameriflux_minus_casa_carbon_dioxide_flux")
 difference_rect_xarray = difference_xarray.unstack("data_point")
@@ -238,15 +274,17 @@ difference_rect_xarray.attrs.update(dict(
 encoding = {name: {"_FillValue": -99, "zlib": True}
             for name in difference_rect_xarray.data_vars}
 encoding.update({name: {"_FillValue": None}
-                 for name in difference_rect_xarray.data_vars})
+                 for name in difference_rect_xarray.coords})
 
 difference_rect_xarray.to_netcdf("ameriflux_minus_casa_hour_tower_data.nc4",
                                  encoding=encoding, format="NETCDF4_CLASSIC")
 
+############################################################
+# Look at spatial correlations
 length_opt = scipy.optimize.minimize_scalar(
     fun=lambda length, corr, dist: np.square(corr - np.exp(-dist / length)).sum(),
     args=(difference_df_rect.corr().values, distance_matrix.values),
-    bounds=(1, 1e3), method="bounded"
+    bounds=(1, 1e4), method="bounded"
 )
 print("Optimizing length alone:\n", length_opt)
 
@@ -257,7 +295,7 @@ length_with_nugget_opt = scipy.optimize.minimize(
             (1 - params[0])
         )
     ).sum(),
-    # Nondimensional, meters
+    # Nondimensional, kilometers
     x0=[.8, 200],
     args=(difference_df_rect.corr().values, distance_matrix.values),
 )
@@ -267,27 +305,56 @@ print("Optimizing length with nugget effect:",
       "\nConvergence:", length_with_nugget_opt.success, length_with_nugget_opt.message,
       "\nInverse Hessian:\n", length_with_nugget_opt.hess_inv)
 
+# Scatter plot of actual correlations and line plots of candidates
+plotting_distances = np.linspace(
+    0,
+    np.ceil(distance_matrix.max().max() / 250) * 250,
+    100
+)
+fig, axes = plt.subplots(2, 1, sharex=True, sharey=True)
+axes[0].scatter(
+    distance_matrix.values.flat,
+    difference_df_rect.corr().values.flat,
+    c=vegtype_match_matrix.values.flat,
+    # marker=koeppen_match_matrix.values.flat,
+)
+axes[0].axhline(0)
+axes[0].set_ylabel("Empirical correlations")
+# axes[1].plot(plotting_distances, np.exp(-plotting_distances / length_opt))
+# axes[1].plot("Exponential fit")
+axes[1].plot(
+    plotting_distances,
+    1 + length_with_nugget_opt.x[0] * np.expm1(-plotting_distances / length_with_nugget_opt.x[1]),
+)
+axes[0].set_xlim(0, plotting_distances[-1])
+axes[0].set_ylim(-0.5, 1)
+fig.savefig("ameriflux-minus-casa-hour-towers-spatial-correlations.pdf")
+plt.close(fig)
 
-def count_pairs(col):
-    """Count the number of pairs for each lag.
+fig, axes = plt.subplots(3, 4, sharex=True, sharey=True)
+axes_flat = axes.reshape(-1, order="C")
+df_index_months = difference_df_rect.index.month
+for month_index in range(MONTHS_PER_YEAR):
+    month_number = month_index + 1
+    month_data = difference_df_rect.loc[
+        df_index_months == month_number, :
+    ]
+    ax = axes_flat[month_index]
+    ax.plot(
+        distance_matrix.values.flat,
+        month_data.corr().values.flat,
+        '.'
+    )
+    ax.set_title(calendar.month_name[month_number])
+    ax.axhline(0)
 
-    Parameters
-    ----------
-    col: pd.Series
+ax.set_xlim(0, plotting_distances[-1])
+ax.set_ylim(-0.5, 1)
+fig.savefig("ameriflux-minus-casa-hour-towers-spatial-correlations-by-month.pdf")
+plt.close(fig)
 
-    Returns
-    -------
-    n_pairs: np.ndarray
-    """
-    have_data = ~col.isnull()
-    n_data = len(col)
-    embedded = np.zeros(2 * n_data - 1)
-    embedded[:n_data] = have_data
-    spectrum = np.fft.fft(embedded)
-    pair_count = np.round(np.fft.ifft(spectrum.conj() * spectrum).real).astype(int)
-    return pair_count
-
-
+############################################################
+# Find temporal autocorrelations, autocovariances, and pairs per lag.
 acovf_index = pd.timedelta_range(start=0, freq="1H", periods=24 * 365 * 8)
 acovf_data = pd.DataFrame(index=acovf_index)
 acf_data = pd.DataFrame(index=acovf_index)
