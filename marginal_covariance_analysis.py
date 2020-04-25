@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+ #!/usr/bin/env python
 # ~*~ coding: utf8 ~*~
 # pylint: disable=invalid-name
 """Find marginal covariances in space and time."""
@@ -35,6 +35,7 @@ HOURS_PER_DAY = 24
 MINUTES_PER_DAY = MINUTES_PER_HOUR * HOURS_PER_DAY
 DAYS_PER_DAY = 1
 DAYS_PER_YEAR = 365.2425
+HOURS_PER_YEAR = HOURS_PER_DAY * DAYS_PER_YEAR
 DAYS_PER_WEEK = 7
 MONTHS_PER_YEAR = 12
 
@@ -53,39 +54,105 @@ PI_OVER_YEAR = np.pi / DAYS_PER_YEAR
 TWO_PI_OVER_YEAR = 2 * PI_OVER_YEAR
 FOUR_PI_OVER_YEAR = 4 * PI_OVER_YEAR
 
+PSU = "Pennsylvania State University Department of Meteorology and Atmospheric Science"
+UTC = datetime.timezone.utc
+NOW = datetime.datetime.now(UTC)
+NOW_ISO = NOW.isoformat()
+
 ############################################################
 # Read in flux data
-amf_ds = xarray.open_dataset(
+amf_hour_ds = xarray.open_dataset(
     "/abl/s0/Continent/dfw5129/ameriflux_netcdf/"
-    "AmeriFlux_single_value_per_tower_hour_data.nc4"
+    "AmeriFlux_single_value_per_tower_hour_data.nc4",
+    chunks={"TIMESTAMP_START": int(HOURS_PER_YEAR),
+            "site": 10},
 )
+amf_half_hour_ds = xarray.open_dataset(
+    "/abl/s0/Continent/dfw5129/ameriflux_netcdf/"
+    "AmeriFlux_single_value_per_tower_half_hour_data.nc4",
+    chunks={"TIMESTAMP_START": int(HOURS_PER_YEAR),
+            "site": 10},
+)
+amf_ds = xarray.concat([amf_hour_ds, amf_half_hour_ds],
+                       dim="site")
 casa_ds = xarray.open_mfdataset(
     ("/mc1s2/s4/dfw5129/casa_downscaling/"
      "20??-??_downscaled_CASA_L2_Ensemble_Mean_Biogenic_NEE_Ameriflux.nc4"),
-    combine="by_coords"
+    combine="by_coords",
+    chunks={"ameriflux_tower_location": 10,
+            "time": int(HOURS_PER_YEAR) // MONTHS_PER_YEAR},
 )
 
 # Pull out matching flux data
 sites_in_both = sorted(set(casa_ds.coords["Site_Id"].values) &
                        set(amf_ds.coords["site"].values))
-times_in_both = sorted(set(casa_ds.coords["time"].values) &
-                       set(amf_ds.coords["TIMESTAMP_START"].values))
-amf_data = amf_ds["ameriflux_carbon_dioxide_flux_estimate"].sel(
+times_in_both = pd.DatetimeIndex(
+    sorted(set(casa_ds.coords["time"].values) &
+           set(amf_ds.coords["TIMESTAMP_START"].values))
+)
+amf_data_rect = amf_ds["ameriflux_carbon_dioxide_flux_estimate"].sel(
     site=sites_in_both, TIMESTAMP_START=times_in_both
-).stack(
-    data_point=("site", "TIMESTAMP_START")
-).dropna("data_point")
-
-casa_data = casa_ds["NEE"].set_index(
+)
+casa_data_rect = casa_ds["NEE"].set_index(
     ameriflux_tower_location="Site_Id"
 ).sel(
-    ameriflux_tower_location=amf_data.coords["site"], time=amf_data.coords["TIMESTAMP_START"]
-).dropna("data_point")
+    ameriflux_tower_location=sites_in_both,
+    time=times_in_both,
+).transpose("site", "TIMESTAMP_START")
+
+for name in list(casa_data_rect.coords):
+    if name not in casa_ds.coords:
+        del casa_data_rect.coords[name]
 
 matching_data_ds = xarray.Dataset(
-    {"ameriflux_fluxes": amf_data,
-     "casa_fluxes": casa_data},
-).unstack("data_point")
+    {
+        "ameriflux_fluxes": amf_data_rect,
+        "casa_fluxes": casa_data_rect.rename(
+            ameriflux_tower_location="site",
+            time="TIMESTAMP_START",
+        ).transpose("site", "TIMESTAMP_START")
+    },
+)
+
+matching_data_ds.attrs.update(dict(
+    history="created from processed Ameriflux data files and 500m CASA outputs downscaled using ERA5",
+    institution=PSU,
+    title="Ameriflux minus CASA carbon dioxide flux differences",
+    acknowledgement="CASA: ACT-America\nERA5: ECMWF\nAmeriFlux Towers: {ameriflux_sources:s}"
+    .format(ameriflux_sources=""),
+    cdm_data_type="Station",
+    Conventions="CF-1.7,ACDD-1.3",
+    creator_email="dfw5129@psu.edu",
+    creator_institution=PSU,
+    creator_name="Daniel Wesloh",
+    creator_type="person",
+    date_metadata_modified=NOW_ISO,
+    date_modified=NOW_ISO,
+    date_created=NOW_ISO,
+    date_written=NOW.date().isoformat(),
+    time_written=NOW.time().replace(microsecond=0).isoformat(),
+    geospatial_lat_min=matching_data_ds.coords["Latitude"].min().values,
+    geospatial_lat_max=matching_data_ds.coords["Latitude"].max().values,
+    geospatial_lat_units="degrees_north",
+    geospatial_lon_min=matching_data_ds.coords["Longitude"].min().values,
+    geospatial_lon_max=matching_data_ds.coords["Longitude"].max().values,
+    geospatial_lon_units="degrees_east",
+    product_version=1,
+    program="NASA EVS",
+    project="Atmospheric Carbon and Transport-America",
+    source="CASA from Yu et al. (2020), retrieved from ORNL; AmeriFlux data from various contributors",
+    standard_name_vocabulary="CF Standard Name table v70",
+    time_coverage_start=matching_data_ds.indexes["TIMESTAMP_START"][0].isoformat(),
+    time_coverage_end=matching_data_ds.indexes["TIMESTAMP_START"][-1].isoformat(),
+    time_coverage_duration=(
+        matching_data_ds.indexes["TIMESTAMP_START"][-1] -
+        matching_data_ds.indexes["TIMESTAMP_START"][0]
+    ).isoformat(),
+    # "P0006-08-30T00:00:00",
+    time_coverage_resolution="PT1H",
+    ncei_template_version="NCEI_NetCDF_TimeSeries_Orthogonal_Template_v2.0",
+    featureType="timeSeries",
+))
 encoding = {name: {"_FillValue": -99, "zlib": True}
             for name in matching_data_ds.data_vars}
 encoding.update({name: {"_FillValue": None}
@@ -94,6 +161,13 @@ matching_data_ds.to_netcdf(
     "ameriflux-and-casa-matching-data.nc4",
     encoding=encoding
 )
+
+amf_data = amf_data_rect.stack(
+    data_point=("site", "TIMESTAMP_START")
+).dropna("data_point")
+casa_data = casa_data_rect.sel(
+    ameriflux_tower_location=amf_data.coords["site"], time=amf_data.coords["TIMESTAMP_START"]
+).dropna("data_point")
 
 # Find differences
 difference = (amf_data - casa_data).dropna("data_point")
@@ -128,7 +202,7 @@ hour_data = np.column_stack([coords, values.astype(np.float32)])
 # assert amf_data.attrs["units"] == "umol/m2/s"
 # assert casa_data.attrs["units"] == "umol/m2/s"
 hour_df = pd.DataFrame(hour_data, columns=["time_days", "x_km", "y_km", "flux_diff_umol_m2_s"])
-hour_df.to_csv("ameriflux_minus_casa_hour_towers.csv")
+hour_df.to_csv("ameriflux_minus_casa_all_towers.csv")
 
 ############################################################
 # Find distances between all pairs of points
@@ -167,7 +241,7 @@ for site1, site2 in itertools.product(site_coords, site_coords):
 # Convert distance to kilometers
 # Will improve conditioning of later problems
 distance_matrix /= 1000
-distance_matrix.to_csv("ameriflux-hour-towers-distance-matrix-km.csv")
+distance_matrix.to_csv("ameriflux-all-towers-distance-matrix-km.csv")
 
 ############################################################
 # Make a times-by-sites array of the differences
@@ -175,7 +249,7 @@ difference_df_rect = difference.to_dataframe(
     name="ameriflux_minus_casa_hour_towers_umol_m2_s"
 )["ameriflux_minus_casa_hour_towers_umol_m2_s"].unstack(0)
 difference_df_rect.to_csv(
-    "ameriflux-minus-casa-hour-towers-difference-data-rect.csv"
+    "ameriflux-minus-casa-all-towers-difference-data-rect.csv"
 )
 
 difference_xarray = difference.to_dataset(name="ameriflux_minus_casa_carbon_dioxide_flux")
@@ -227,10 +301,6 @@ for name in ("IGBP", "CLIMATE_KOEPPEN", "SITE_NAME", "IGBP_COMMENT",
 for name in ("SITE_FUNDING", "ACKNOWLEDGEMENT"):
     difference_rect_xarray.coords["AMERIFLUX_" + name] = amf_ds.coords[name]
 
-PSU = "Pennsylvania State University Department of Meteorology and Atmospheric Science"
-UTC = datetime.timezone.utc
-NOW = datetime.datetime.now(UTC)
-NOW_ISO = NOW.isoformat()
 difference_rect_xarray.attrs.update(dict(
     history="created from processed Ameriflux data files and 500m CASA outputs downscaled using ERA5",
     institution=PSU,
