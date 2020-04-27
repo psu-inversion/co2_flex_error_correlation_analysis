@@ -1,4 +1,4 @@
- #!/usr/bin/env python
+#!/usr/bin/env python
 # ~*~ coding: utf8 ~*~
 # pylint: disable=invalid-name
 """Find marginal covariances in space and time."""
@@ -11,6 +11,7 @@ import inspect
 import numpy as np
 from numpy import exp, sin, cos, square, newaxis
 import matplotlib.pyplot as plt
+import bottleneck as bn
 import pandas as pd
 import scipy.optimize
 
@@ -222,26 +223,31 @@ koeppen_match_matrix = pd.DataFrame(
     columns=amf_ds.indexes["site"],
     dtype=bool
 )
-site_coords = amf_ds.coords["site"]
+site_coords = amf_ds.coords["site"].load()
+# Very slow
+GEOD_line_length = GEOD.line_length
 for site1, site2 in itertools.product(site_coords, site_coords):
     site1_name = site1.values[()]
     site2_name = site2.values[()]
-    distance_matrix.loc[site1_name, site2_name] = GEOD.line_length(
+    distance_matrix.loc[site1_name, site2_name] = GEOD_line_length(
         [site1.coords["LOCATION_LONG"], site2.coords["LOCATION_LONG"]],
         [site1.coords["LOCATION_LAT"], site2.coords["LOCATION_LAT"]]
     )
     vegtype_match_matrix.loc[site1_name, site2_name] = (
-        amf_ds.coords["IGBP"].sel(site=site1_name) == amf_ds.coords["IGBP"].sel(site=site2_name)
+        site1.coords["IGBP"].values ==
+        site2.coords["IGBP"].values
     )
     koeppen_match_matrix.loc[site1_name, site2_name] = (
-        amf_ds.coords["CLIMATE_KOEPPEN"].sel(site=site1_name) ==
-        amf_ds.coords["CLIMATE_KOEPPEN"].sel(site=site2_name)
+        amf_ds.coords["CLIMATE_KOEPPEN"].sel(site=site1_name).values ==
+        amf_ds.coords["CLIMATE_KOEPPEN"].sel(site=site2_name).values
     )
 
 # Convert distance to kilometers
 # Will improve conditioning of later problems
 distance_matrix /= 1000
 distance_matrix.to_csv("ameriflux-all-towers-distance-matrix-km.csv")
+vegtype_match_matrix.to_csv("ameriflux-all-towers-vegetation-type-match-matrix.csv")
+koeppen_match_matrix.to_csv("ameriflux-all-towers-koeppen-classification-match-matrix.csv")
 
 ############################################################
 # Make a times-by-sites array of the differences
@@ -352,8 +358,14 @@ difference_rect_xarray.to_netcdf("ameriflux_minus_casa_hour_tower_data.nc4",
 ############################################################
 # Look at spatial correlations
 length_opt = scipy.optimize.minimize_scalar(
-    fun=lambda length, corr, dist: np.square(corr - np.exp(-dist / length)).sum(),
-    args=(difference_df_rect.corr().values, distance_matrix.values),
+    fun=lambda length, corr, dist: bn.nansum(np.square(corr - np.exp(-dist / length))),
+    args=(
+        difference_df_rect.corr().values,
+        distance_matrix.loc[
+            difference_df_rect.columns,
+            difference_df_rect.columns
+        ].values
+    ),
     bounds=(1, 1e4), method="bounded"
 )
 print("Optimizing length alone:\n", length_opt)
@@ -367,7 +379,13 @@ length_with_nugget_opt = scipy.optimize.minimize(
     ).sum(),
     # Nondimensional, kilometers
     x0=[.8, 200],
-    args=(difference_df_rect.corr().values, distance_matrix.values),
+    args=(
+        difference_df_rect.corr().values,
+        distance_matrix.loc[
+            difference_df_rect.columns,
+            difference_df_rect.columns,
+        ].values
+    ),
 )
 print("Optimizing length with nugget effect:",
       "\nWeight on correlated part:", length_with_nugget_opt.x[0],
@@ -383,9 +401,15 @@ plotting_distances = np.linspace(
 )
 fig, axes = plt.subplots(2, 1, sharex=True, sharey=True)
 axes[0].scatter(
-    distance_matrix.values.flat,
+    distance_matrix.loc[
+        difference_df_rect.columns,
+        difference_df_rect.columns,
+    ].values.flat,
     difference_df_rect.corr().values.flat,
-    c=vegtype_match_matrix.values.flat,
+    c=vegtype_match_matrix.loc[
+        difference_df_rect.columns,
+        difference_df_rect.columns,
+    ].values.flat,
     # marker=koeppen_match_matrix.values.flat,
 )
 axes[0].axhline(0)
@@ -411,7 +435,10 @@ for month_index in range(MONTHS_PER_YEAR):
     ]
     ax = axes_flat[month_index]
     ax.plot(
-        distance_matrix.values.flat,
+        distance_matrix.loc[
+            difference_df_rect.columns,
+            difference_df_rect.columns,
+        ].values.flat,
         month_data.corr().values.flat,
         '.'
     )
