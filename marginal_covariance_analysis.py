@@ -66,45 +66,50 @@ amf_hour_ds = xarray.open_dataset(
     "/abl/s0/Continent/dfw5129/ameriflux_netcdf/"
     "AmeriFlux_single_value_per_tower_hour_data.nc4",
     chunks={"TIMESTAMP_START": int(HOURS_PER_YEAR),
-            "site": 10},
-)
+            "site": 20},
+).resample(TIMESTAMP_START="1H").mean()
 amf_half_hour_ds = xarray.open_dataset(
     "/abl/s0/Continent/dfw5129/ameriflux_netcdf/"
     "AmeriFlux_single_value_per_tower_half_hour_data.nc4",
     chunks={"TIMESTAMP_START": int(HOURS_PER_YEAR),
-            "site": 10},
-)
-amf_ds = xarray.concat([amf_hour_ds, amf_half_hour_ds],
-                       dim="site")
+            "site": 20},
+).resample(TIMESTAMP_START="1H").mean()
+amf_ds = xarray.concat(
+    [amf_hour_ds, amf_half_hour_ds],
+    dim="site"
+).persist()
 casa_ds = xarray.open_mfdataset(
     ("/mc1s2/s4/dfw5129/casa_downscaling/"
      "20??-??_downscaled_CASA_L2_Ensemble_Mean_Biogenic_NEE_Ameriflux.nc4"),
     combine="by_coords",
-    chunks={"ameriflux_tower_location": 10,
-            "time": int(HOURS_PER_YEAR) // MONTHS_PER_YEAR},
-)
+    chunks={"ameriflux_tower_location": 20,
+            "time": int(HOURS_PER_YEAR)},
+).transpose(
+    "ameriflux_tower_location", "time"
+).persist()
 
 # Pull out matching flux data
-sites_in_both = sorted(set(casa_ds.coords["Site_Id"].values) &
-                       set(amf_ds.coords["site"].values))
+sites_in_both = sorted(list(set(casa_ds.coords["Site_Id"].values) &
+                            set(amf_ds.coords["site"].values)))
 times_in_both = pd.DatetimeIndex(
-    sorted(set(casa_ds.coords["time"].values) &
-           set(amf_ds.coords["TIMESTAMP_START"].values))
+    sorted(list(set(casa_ds.coords["time"].values) &
+                set(amf_ds.coords["TIMESTAMP_START"].values)))
 )
 amf_data_rect = amf_ds["ameriflux_carbon_dioxide_flux_estimate"].sel(
     site=sites_in_both, TIMESTAMP_START=times_in_both
-)
+).transpose("site", "TIMESTAMP_START").persist()
 casa_data_rect = casa_ds["NEE"].set_index(
     ameriflux_tower_location="Site_Id"
 ).sel(
     ameriflux_tower_location=sites_in_both,
     time=times_in_both,
-).transpose("site", "TIMESTAMP_START")
+).persist()
 
 for name in list(casa_data_rect.coords):
     if name not in casa_ds.coords:
         del casa_data_rect.coords[name]
 
+print("Creating big dataset", flush=True)
 matching_data_ds = xarray.Dataset(
     {
         "ameriflux_fluxes": amf_data_rect,
@@ -113,7 +118,20 @@ matching_data_ds = xarray.Dataset(
             time="TIMESTAMP_START",
         ).transpose("site", "TIMESTAMP_START")
     },
+).persist().rename(TIMESTAMP_START="time")
+matching_data_ds["flux_difference"] = (
+    matching_data_ds["ameriflux_fluxes"] -
+    matching_data_ds["casa_fluxes"]
 )
+matching_data_ds["flux_difference"].attrs.update({
+    "long_name": "ameriflux_carbon_dioxide_flux_minus_casa_carbon_dioxide_flux",
+    "units": "umol/m^2/s",
+})
+# matching_data_ds.coords["time_bnds"] = amf_hour_ds.coords["time_bnds"]
+# matching_data_ds.coords["TIMESTAMP_START"].attrs.update(
+#     {"valid_min": 0,
+#      "valid_max": 15 * HOURS_PER_YEAR}
+# )
 
 matching_data_ds.attrs.update(dict(
     history="created from processed Ameriflux data files and 500m CASA outputs downscaled using ERA5",
@@ -158,6 +176,7 @@ encoding = {name: {"_FillValue": -99, "zlib": True}
             for name in matching_data_ds.data_vars}
 encoding.update({name: {"_FillValue": None}
                  for name in matching_data_ds.coords})
+encoding["TIMESTAMP_START"]["units"] = "hours since 2003-01-01T00:00:00+00:00"
 matching_data_ds.to_netcdf(
     "ameriflux-and-casa-matching-data.nc4",
     encoding=encoding
@@ -165,13 +184,13 @@ matching_data_ds.to_netcdf(
 
 amf_data = amf_data_rect.stack(
     data_point=("site", "TIMESTAMP_START")
-).dropna("data_point")
+).dropna("data_point").persist()
 casa_data = casa_data_rect.sel(
     ameriflux_tower_location=amf_data.coords["site"], time=amf_data.coords["TIMESTAMP_START"]
-).dropna("data_point")
+).dropna("data_point").persist()
 
 # Find differences
-difference = (amf_data - casa_data).dropna("data_point")
+difference = (amf_data.load() - casa_data.load()).dropna("data_point").persist()
 
 coords = np.empty((difference.shape[0], 3), dtype=np.float32)
 values = np.array(difference.values, dtype=np.float32)
