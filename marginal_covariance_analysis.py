@@ -167,11 +167,11 @@ matching_data_ds.attrs.update(dict(
     project="Atmospheric Carbon and Transport-America",
     source="CASA from Yu et al. (2020), retrieved from ORNL; AmeriFlux data from various contributors",
     standard_name_vocabulary="CF Standard Name table v70",
-    time_coverage_start=matching_data_ds.indexes["TIMESTAMP_START"][0].isoformat(),
-    time_coverage_end=matching_data_ds.indexes["TIMESTAMP_START"][-1].isoformat(),
+    time_coverage_start=matching_data_ds.indexes["time"][0].isoformat(),
+    time_coverage_end=matching_data_ds.indexes["time"][-1].isoformat(),
     time_coverage_duration=(
-        matching_data_ds.indexes["TIMESTAMP_START"][-1] -
-        matching_data_ds.indexes["TIMESTAMP_START"][0]
+        matching_data_ds.indexes["time"][-1] -
+        matching_data_ds.indexes["time"][0]
     ).isoformat(),
     # "P0006-08-30T00:00:00",
     time_coverage_resolution="PT1H",
@@ -182,7 +182,8 @@ encoding = {name: {"_FillValue": -99, "zlib": True}
             for name in matching_data_ds.data_vars}
 encoding.update({name: {"_FillValue": None}
                  for name in matching_data_ds.coords})
-encoding["TIMESTAMP_START"]["units"] = "hours since 2003-01-01T00:00:00+00:00"
+encoding["time"]["units"] = "hours since 2003-01-01T00:00:00+00:00"
+encoding["time"]["dtype"] = np.int32
 matching_data_ds.to_netcdf(
     "ameriflux-and-casa-matching-data.nc4",
     encoding=encoding
