@@ -186,7 +186,7 @@ encoding["time"]["units"] = "hours since 2003-01-01T00:00:00+00:00"
 encoding["time"]["dtype"] = np.int32
 matching_data_ds.to_netcdf(
     "ameriflux-and-casa-matching-data.nc4",
-    encoding=encoding
+    encoding=encoding, engine="h5netcdf",
 )
 
 amf_data = amf_data_rect.stack(
