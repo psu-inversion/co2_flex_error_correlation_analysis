@@ -103,13 +103,13 @@ times_in_both = pd.DatetimeIndex(
 print("Extracting matching data points", flush=True)
 amf_data_rect = amf_ds["ameriflux_carbon_dioxide_flux_estimate"].sel(
     site=sites_in_both, TIMESTAMP_START=times_in_both
-).transpose("site", "TIMESTAMP_START").persist()
+).astype(np.float32).transpose("site", "TIMESTAMP_START").load()
 casa_data_rect = casa_ds["NEE"].set_index(
     ameriflux_tower_location="Site_Id"
 ).sel(
     ameriflux_tower_location=sites_in_both,
     time=times_in_both,
-).persist()
+).astype(np.float32).load()
 
 for name in list(casa_data_rect.coords):
     if name not in casa_ds.coords:
