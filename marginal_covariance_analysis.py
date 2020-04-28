@@ -381,10 +381,13 @@ encoding.update({name: {"_FillValue": None}
 difference_rect_xarray.to_netcdf("ameriflux_minus_casa_hour_tower_data.nc4",
                                  encoding=encoding, format="NETCDF4_CLASSIC")
 
+bn_nansum = bn.nansum
+np_square = np.square
+np_exp = np.exp
 ############################################################
 # Look at spatial correlations
 length_opt = scipy.optimize.minimize_scalar(
-    fun=lambda length, corr, dist: bn.nansum(np.square(corr - np.exp(-dist / length))),
+    fun=lambda length, corr, dist: bn_nansum(np_square(corr - np_exp(-dist / length))),
     args=(
         difference_df_rect.corr().values,
         distance_matrix.loc[
@@ -397,12 +400,12 @@ length_opt = scipy.optimize.minimize_scalar(
 print("Optimizing length alone:\n", length_opt)
 
 length_with_nugget_opt = scipy.optimize.minimize(
-    fun=lambda params, corr, dist: square(
+    fun=lambda params, corr, dist: bn_nansum(np_square(
         corr - (
-            params[0] * exp(-dist / params[1]) +
+            params[0] * np_exp(-dist / params[1]) +
             (1 - params[0])
         )
-    ).sum(),
+    )),
     # Nondimensional, kilometers
     x0=[.8, 200],
     args=(
