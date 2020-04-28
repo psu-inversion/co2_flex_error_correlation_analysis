@@ -451,7 +451,52 @@ axes[1].plot(
 )
 axes[0].set_xlim(0, plotting_distances[-1])
 axes[0].set_ylim(-0.5, 1)
-fig.savefig("ameriflux-minus-casa-hour-towers-spatial-correlations.pdf")
+fig.savefig("ameriflux-minus-casa-all-towers-spatial-correlations.pdf")
+plt.close(fig)
+
+distance_matrix_matched =     distance_matrix.loc[
+    difference_df_rect.columns,
+    difference_df_rect.columns,
+]
+corr_matrix = difference_df_rect.corr()
+correlations_not_nan = ~corr_matrix.isna()
+
+fig, axes = plt.subplots(3, 1, sharex=True, sharey=True)
+axes[0].hist2d(
+    distance_matrix_matched.values[correlations_not_nan.values].reshape(-1),
+    corr_matrix.values[correlations_not_nan.values].reshape(-1),
+    range=[[0, plotting_distances[-1]], [-1, 1]],
+    bins=[30, 10],
+    # marginals=True,
+    # extent=(0, plotting_distances[-1], -1, 1),
+)
+
+matching_vegtype_index = vegtype_match_matrix.loc[
+    difference_df_rect.columns,
+    difference_df_rect.columns,
+]
+axes[1].hist2d(
+    distance_matrix_matched.values[matching_vegtype_index & correlations_not_nan].reshape(-1),
+    corr_matrix.values[matching_vegtype_index & correlations_not_nan].reshape(-1),
+    range=[[0, plotting_distances[-1]], [-1, 1]],
+    bins=[30, 10],
+    # marginals=True,
+    # extent=(0, plotting_distances[-1], -1, 1),
+)
+
+matching_koeppen_index = koeppen_match_matrix.loc[
+    difference_df_rect.columns,
+    difference_df_rect.columns,
+]
+axes[2].hist2d(
+    distance_matrix_matched.values[matching_koeppen_index & correlations_not_nan].reshape(-1),
+    corr_matrix.values[matching_koeppen_index & correlations_not_nan].reshape(-1),
+    range=[[0, plotting_distances[-1]], [-1, 1]],
+    bins=[30, 10],
+    # marginals=True,
+    # extent=(0, plotting_distances[-1], -1, 1),
+)
+fig.savefig("ameriflux-minus-casa-hexbin-spatial-correlations.png")
 plt.close(fig)
 
 fig, axes = plt.subplots(3, 4, sharex=True, sharey=True)
@@ -476,7 +521,7 @@ for month_index in range(MONTHS_PER_YEAR):
 
 ax.set_xlim(0, plotting_distances[-1])
 ax.set_ylim(-0.5, 1)
-fig.savefig("ameriflux-minus-casa-hour-towers-spatial-correlations-by-month.pdf")
+fig.savefig("ameriflux-minus-casa-all-towers-spatial-correlations-by-month.pdf")
 plt.close(fig)
 
 ############################################################
