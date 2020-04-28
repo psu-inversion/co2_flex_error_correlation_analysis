@@ -62,22 +62,26 @@ NOW_ISO = NOW.isoformat()
 
 ############################################################
 # Read in flux data
+print("Reading AmeriFlux data", flush=True)
 amf_hour_ds = xarray.open_dataset(
     "/abl/s0/Continent/dfw5129/ameriflux_netcdf/"
     "AmeriFlux_single_value_per_tower_hour_data.nc4",
     chunks={"TIMESTAMP_START": int(HOURS_PER_YEAR),
             "site": 20},
 ).resample(TIMESTAMP_START="1H").mean()
+print("Reading more AmeriFlux data", flush=True)
 amf_half_hour_ds = xarray.open_dataset(
     "/abl/s0/Continent/dfw5129/ameriflux_netcdf/"
     "AmeriFlux_single_value_per_tower_half_hour_data.nc4",
     chunks={"TIMESTAMP_START": int(HOURS_PER_YEAR),
             "site": 20},
 ).resample(TIMESTAMP_START="1H").mean()
+print("Combining AmeriFlux data", flush=True)
 amf_ds = xarray.concat(
     [amf_hour_ds, amf_half_hour_ds],
     dim="site"
 ).persist()
+print("Reading CASA data", flush=True)
 casa_ds = xarray.open_mfdataset(
     ("/mc1s2/s4/dfw5129/casa_downscaling/"
      "20??-??_downscaled_CASA_L2_Ensemble_Mean_Biogenic_NEE_Ameriflux.nc4"),
@@ -89,12 +93,14 @@ casa_ds = xarray.open_mfdataset(
 ).persist()
 
 # Pull out matching flux data
+print("Finding matching data points", flush=True)
 sites_in_both = sorted(list(set(casa_ds.coords["Site_Id"].values) &
                             set(amf_ds.coords["site"].values)))
 times_in_both = pd.DatetimeIndex(
     sorted(list(set(casa_ds.coords["time"].values) &
                 set(amf_ds.coords["TIMESTAMP_START"].values)))
 )
+print("Extracting matching data points", flush=True)
 amf_data_rect = amf_ds["ameriflux_carbon_dioxide_flux_estimate"].sel(
     site=sites_in_both, TIMESTAMP_START=times_in_both
 ).transpose("site", "TIMESTAMP_START").persist()
