@@ -568,13 +568,15 @@ for month_index in range(MONTHS_PER_YEAR):
         df_index_months == month_number, :
     ]
     ax = axes_flat[month_index]
-    ax.plot(
+    ax.hist2d(
         distance_matrix.loc[
             difference_df_rect.columns,
             difference_df_rect.columns,
-        ].values.flat,
-        month_data.corr().values.flat,
-        '.'
+        ].values.reshape(-1),
+        month_data.corr().values.reshape(-1),
+        range=[[0, plotting_distances[-1]], [-1, 1]],
+        bins=[30, 10],
+        # '.'
     )
     ax.set_title(calendar.month_name[month_number])
     ax.axhline(0)
