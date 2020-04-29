@@ -189,6 +189,66 @@ matching_data_ds.to_netcdf(
     encoding=encoding, engine="h5netcdf",
 )
 
+matching_data_ds.coords["month"] = matching_data_ds.indexes["time"].month
+matching_data_ds.coords["hour"] = matching_data_ds.indexes["time"].hour
+matching_data_ds.coords["month_hour"] = (
+    matching_data_ds.coords["month"] * 1000 +
+    matching_data_ds.coords["hour"]
+)
+
+matching_data_month_hour_ds = matching_data_ds.groupby(
+    "month_hour"
+).mean().set_index(month_hour=["month", "hour"]).unstack()
+matching_data_month_ds = matching_data_ds.groupby(
+    "month"
+).mean()
+
+matching_data_month_hour_ds.coords["climatology_bounds_approximation"] = (
+    ["month", "hour", "bounds2"],
+    np.array([
+        [
+            [
+                pd.Timestamp(
+                    "2003-{month.values:02d}-01T{hour.values:02d}:00:00+00:00"
+                    .format(month=month, hour=hour)
+                ),
+                pd.Timestamp(
+                    "2018-{month.values:02d}-28T{hour.values:02d}:00:00+00:00"
+                    .format(month=month, hour=hour)
+                )
+            ]
+            for hour in matching_data_month_hour_ds.coords["hour"]
+        ]
+        for month in matching_data_month_hour_ds.coords["month"]
+    ]).astype("M8[ns]"),
+    {"standard_name": "climatology_bounds"}
+)
+
+matching_data_month_ds.coords["climatology_bounds_approximation"] = (
+    ["month", "bounds2"],
+    np.array([
+        [
+            pd.Timestamp(
+                "2003-{month.values:02d}-01T00:00:00+00:00".format(month=month)
+            ),
+            pd.Timestamp(
+                "2018-{month.values:02d}-28T23:59:59+00:00".format(month=month)
+            )
+        ]
+        for month in matching_data_month_hour_ds.coords["month"]
+    ]).astype("M8[ns]"),
+    {"standard_name": "climatology_bounds"}
+)
+
+matching_data_month_hour_ds.to_netcdf(
+    "ameriflux-and-casa-all-towers-daily-cycle-by-month.nc4",
+    encoding=encoding, engine="h5netcdf",
+)
+matching_data_month_ds.to_netcdf(
+    "ameriflux-and-casa-all-towers-seasonal-cycle.nc4",
+    encoding=encoding, engine="h5netcdf",
+)
+
 amf_data = amf_data_rect.stack(
     data_point=("site", "TIMESTAMP_START")
 ).dropna("data_point").persist()
