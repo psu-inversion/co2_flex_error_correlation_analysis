@@ -166,8 +166,8 @@ for coef, val in PARAM_UPPER_BOUNDS.items():
 ############################################################
 # Read in data
 AMERIFLUX_MINUS_CASA_DATA = xarray.open_dataset(
-    "ameriflux_minus_casa_hour_tower_data.nc4"
-).set_index(site="site_id")
+    "ameriflux-and-casa-matching-data-2.nc4"
+)
 
 ############################################################
 # Set up data frames for results
@@ -227,18 +227,18 @@ for site_name in AMERIFLUX_MINUS_CASA_DATA.indexes["site"]:
     # Pull out non-missing site data, so I can get a decent idea of
     # what has enough data I can use.
     site_data = AMERIFLUX_MINUS_CASA_DATA[
-        "ameriflux_minus_casa_carbon_dioxide_flux"
+        "flux_difference"
     ].sel(
         site=site_name
-    ).dropna("TIMESTAMP_START").sortby("TIMESTAMP_START")
+    ).dropna("time").sortby("time")
 
     # Split data in two, so we have separate training and validation
     # data sets.
     first_half  = site_data.isel(
-        TIMESTAMP_START=slice(None, len(site_data) // 2)
+        time=slice(None, len(site_data) // 2)
     )
     second_half = site_data.isel(
-        TIMESTAMP_START=slice(len(site_data) // 2, None)
+        time=slice(len(site_data) // 2, None)
     )
     if not (has_enough_data(first_half) and has_enough_data(second_half)):
         print("Not enough data.  Skipping:", site_name)
@@ -247,8 +247,8 @@ for site_name in AMERIFLUX_MINUS_CASA_DATA.indexes["site"]:
     # Resample to an hour, so acf/count_pairs can work (they assume
     # regularly spaced data, and I need the .freq attribute to make
     # that happen)
-    first_half.resample(TIMESTAMP_START="1H").first()
-    second_half.resample(TIMESTAMP_START="1H").first()
+    first_half.resample(time="1H").first()
+    second_half.resample(time="1H").first()
 
     for train_data, validation_data in itertools.permutations(
             [first_half, second_half]
@@ -256,7 +256,7 @@ for site_name in AMERIFLUX_MINUS_CASA_DATA.indexes["site"]:
         print("New train/val split")
         corr_data_train = get_autocorrelation_stats(
             train_data.to_dataframe()[
-                "ameriflux_minus_casa_carbon_dioxide_flux"
+                "flux_difference"
             ].resample("1H").first()
         )
         corr_data_train = corr_data_train[
@@ -264,7 +264,7 @@ for site_name in AMERIFLUX_MINUS_CASA_DATA.indexes["site"]:
         ]
         corr_data_validate = get_autocorrelation_stats(
             validation_data.to_dataframe()[
-                "ameriflux_minus_casa_carbon_dioxide_flux"
+                "flux_difference"
             ].resample("1H").first()
         )
         corr_data_validate = corr_data_validate[
