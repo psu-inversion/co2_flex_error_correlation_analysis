@@ -466,6 +466,17 @@ for site_name in AMERIFLUX_MINUS_CASA_DATA.indexes["site"]:
         "{site_name:s}-cross-validation-function-fits.png"
         .format(site_name=site_name)
     )
+    xticks_short = pd.timedelta_range(start=0, freq="7D", periods=7)
+    xtick_labels = ["{n:d} days".format(n=i * 7) for i in range(len(xticks_short))]
+    axes[0, 0].set_xlim(xticks_short[[0, -1]].astype(float))
+    for ax in axes.flat:
+        ax.set_xticks(xticks_short)
+    for ax in axes[-1, :]:
+        ax.set_xticklabels(xtick_labels)
+    fig.savefig(
+        "{site_name:s}-cross-validation-function-fits-short.png"
+        .format(site_name=site_name)
+    )
     plt.close(fig)
 
 COEF_DATA.to_csv("coefficient-data-loop.csv")
