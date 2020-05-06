@@ -336,8 +336,8 @@ for site_name in AMERIFLUX_MINUS_CASA_DATA.indexes["site"]:
                     ),
                     jac=curve_deriv,
                 )
-            except RuntimeError:
-                print("Curve fit failed, next function")
+            except (RuntimeError, ValueError) as err:
+                print(err, "Curve fit failed, next function", sep="\n")
                 continue
             opt_res = scipy.optimize.minimize(
                 fun_to_optimize,
