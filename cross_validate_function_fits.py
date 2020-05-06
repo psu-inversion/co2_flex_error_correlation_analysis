@@ -37,7 +37,7 @@ HOURS_PER_YEAR = HOURS_PER_DAY * DAYS_PER_YEAR
 
 # Need to check this separately for each half of the data
 N_YEARS_DATA = 2
-REQUIRED_DATA_FRAC = 0.75
+REQUIRED_DATA_FRAC = 0.8
 
 
 def has_enough_data(da):
