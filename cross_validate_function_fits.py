@@ -418,7 +418,7 @@ for site_name in AMERIFLUX_MINUS_CASA_DATA.indexes["site"]:
             )
         break
     # Done fits, make plots.
-    fig, axes = plt.subplots(4, 2, sharey=True, sharex=True)
+    fig, axes = plt.subplots(4, 2, sharey=True, sharex=True, figsize=(6.5, 5))
     fig.suptitle("Correlation fit for {site:s}".format(site=site_name))
     axes[0, 0].set_title("Training data")
     axes[0, 1].set_title("Validation data")
