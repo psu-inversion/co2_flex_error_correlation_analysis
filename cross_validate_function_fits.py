@@ -57,6 +57,9 @@ def has_enough_data(da):
         if "time" in name.lower()
     ][0]
     time_index = da.indexes[time_index_name]
+    if len(time_index) < 1:
+        print("No data")
+        return False
     if time_index[-1] - time_index[0] < datetime.timedelta(
             days=N_YEARS_DATA * DAYS_PER_YEAR
     ):
