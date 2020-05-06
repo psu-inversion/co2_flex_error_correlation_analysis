@@ -416,6 +416,7 @@ for site_name in AMERIFLUX_MINUS_CASA_DATA.indexes["site"]:
                 corr_data_validate["acf"].astype(np.float32).values,
                 corr_data_validate["pair_counts"].astype(np.float32).values,
             )
+        break
     # Done fits, make plots.
     fig, axes = plt.subplots(4, 2, sharey=True, sharex=True)
     fig.suptitle("Correlation fit for {site:s}".format(site=site_name))
