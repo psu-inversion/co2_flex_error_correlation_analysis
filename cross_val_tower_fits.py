@@ -253,13 +253,14 @@ CROSS_TOWER_FIT_ERROR_DS = xarray.Dataset(
                 ],
             },
         ),
-        "optimized_parameter_estimated_covariance_matrix": (
+        "optimized_parameters_estimated_covariance_matrix": (
             ("correlation_function", "training_tower",
              "parameter_name_adjoint", "parameter_name"),
             np.full(
                 (
                     len(CORRELATION_PARTS_LIST),
                     len(SITES_TO_KEEP),
+                    len(STARTING_PARAMS),
                     len(STARTING_PARAMS),
                 ),
                 np.nan,
@@ -272,6 +273,7 @@ CROSS_TOWER_FIT_ERROR_DS = xarray.Dataset(
             },
         ),
     },
+
     {
         "training_tower": (
             ("training_tower",),
@@ -304,11 +306,11 @@ CROSS_TOWER_FIT_ERROR_DS = xarray.Dataset(
         ),
         "parameter_name": (
             ("parameter_name",),
-            np.array(STARTING_PARAMS.keys()),
+            np.array(list(STARTING_PARAMS.keys())),
         ),
         "parameter_name_adjoint": (
             ("parameter_name_adjoint",),
-            np.array(STARTING_PARAMS.keys()),
+            np.array(list(STARTING_PARAMS.keys())),
         ),
     },
 )
@@ -427,7 +429,7 @@ TIME_LAG_INDEX = pd.timedelta_range(
 #     format="NETCDF4_CLASSIC", encoding=encoding
 # )
 
-AUTOCORRELATION_DATA = xarray.read_dataset(
+AUTOCORRELATION_DATA = xarray.open_dataset(
     "ameriflux-minus-casa-autocorrelation-data-all-towers.nc4",
 )
 
@@ -553,6 +555,7 @@ for combination in CORRELATION_PARTS_LIST:
             )
         )
         for validation_tower in AUTOCORRELATION_FOR_CURVE_FIT:
+
             corr_data_validate = AUTOCORRELATION_FOR_CURVE_FIT[
                 validation_tower
             ]
@@ -579,28 +582,240 @@ for combination in CORRELATION_PARTS_LIST:
                 ).values
             )
 
+FUNCTION_PARAMS_AND_COV_DS = xarray.concat(
+    [xarray.concat(ds_list, dim="training_tower")
+     for ds_list in FUNCTION_PARAMS_AND_COV],
+    dim="correlation_function"
+)
+CROSS_TOWER_FIT_ERROR_DS = CROSS_TOWER_FIT_ERROR_DS.update(FUNCTION_PARAMS_AND_COV_DS)
+
 encoding = {name: {"_FillValue": -9.999e9, "zlib": True}
             for name in CROSS_TOWER_FIT_ERROR_DS.data_vars}
-encoding.extend({name: {"_FillValue": None}
+encoding.update({name: {"_FillValue": None}
                  for name in CROSS_TOWER_FIT_ERROR_DS.coords})
 CROSS_TOWER_FIT_ERROR_DS.to_netcdf(
     "ameriflux-minus-casa-autocorrelation-function-fits.nc4",
-    format="NETCDF4_CLASSIC", encoding=encoding
+    format="NETCDF4", encoding=encoding
 )
 
+############################################################
+# Unnormalized plots, just the raw cross-validation error
+min_err = max(
+    CROSS_TOWER_FIT_ERROR_DS["cross_validation_error"].where(
+        CROSS_TOWER_FIT_ERROR_DS.coords["training_tower"] !=
+        CROSS_TOWER_FIT_ERROR_DS.coords["validation_tower"]
+    ).min(),
+    0
+)
+max_err = CROSS_TOWER_FIT_ERROR_DS["cross_validation_error"].where(
+    CROSS_TOWER_FIT_ERROR_DS.coords["training_tower"] !=
+    CROSS_TOWER_FIT_ERROR_DS.coords["validation_tower"]
+).quantile(0.95)
 
-min_err = max(CROSS_TOWER_FIT_ERROR_DS["cross_validation_error"].min(), 0)
-max_err = CROSS_TOWER_FIT_ERROR_DS["cross_validation_error"].max()
-
-fig, axes = plt.subplots(5, 5, sharex=True, sharey=True)
+fig, axes = plt.subplots(5, 5, sharex=True, sharey=True, figsize=(6.5, 7))
+for ax in axes.flat:
+    ax.set_visible(False)
 
 for corr_fun, ax in zip(
         CROSS_TOWER_FIT_ERROR_DS.coords["correlation_function"], axes.flat
 ):
-    ax.imshow(
+    ax.set_visible(True)
+    image = ax.imshow(
         CROSS_TOWER_FIT_ERROR_DS["cross_validation_error"].sel(
             correlation_function=corr_fun
         ),
         vmin=min_err, vmax=max_err
     )
-    ax.set_title(corr_fun)
+    ax.set_title(corr_fun.coords["correlation_function_short_name"].values)
+
+fig.subplots_adjust(hspace=0.4)
+cbar = fig.colorbar(
+    image, ax=axes[-1, 1:], orientation="horizontal", extend="both",
+    fraction=1
+)
+cbar.set_label("Cross-Validation Error")
+fig.savefig("tower-cross-validation-raw-mismatch.png")
+plt.close(fig)
+
+############################################################
+# Plots normalized by the number of pairs going into the autocorrelations
+TOTAL_N_PAIRS = (
+    AUTOCORRELATION_DATA["flux_error_n_pairs"]
+    .sum("time_lag")
+    .rename(site="validation_tower")
+)
+PAIRS_NORMALIZED_CV_ERR = (
+    CROSS_TOWER_FIT_ERROR_DS["cross_validation_error"] /
+    TOTAL_N_PAIRS
+)
+
+pairs_min_err = max(
+    PAIRS_NORMALIZED_CV_ERR.where(
+        PAIRS_NORMALIZED_CV_ERR.coords["training_tower"] !=
+        PAIRS_NORMALIZED_CV_ERR.coords["validation_tower"]
+    ).min(),
+    0
+)
+pairs_max_err = PAIRS_NORMALIZED_CV_ERR.where(
+    PAIRS_NORMALIZED_CV_ERR.coords["training_tower"] !=
+    PAIRS_NORMALIZED_CV_ERR.coords["validation_tower"]
+).quantile(0.95)
+
+
+fig, axes = plt.subplots(5, 5, sharex=True, sharey=True, figsize=(6.5, 7))
+for ax in axes.flat:
+    ax.set_visible(False)
+
+for corr_fun, ax in zip(
+        PAIRS_NORMALIZED_CV_ERR.coords["correlation_function"], axes.flat
+):
+    ax.set_visible(True)
+    image = ax.imshow(
+        PAIRS_NORMALIZED_CV_ERR.sel(
+            correlation_function=corr_fun
+        ),
+        vmin=pairs_min_err, vmax=pairs_max_err
+    )
+    ax.set_title(corr_fun.coords["correlation_function_short_name"].values)
+
+fig.subplots_adjust(hspace=0.4)
+cbar = fig.colorbar(
+    image, ax=axes[-1, 1:], orientation="horizontal", extend="both",
+    fraction=1
+)
+cbar.set_label("Cross-validation error normalized by number of pairs")
+fig.savefig("tower-cross-validation-pairs-normalized-mismatch.png")
+plt.close(fig)
+
+############################################################
+# Plots normalized by the number of differences going into the autocorrelations
+N_DIFFERENCES = AMERIFLUX_MINUS_CASA_DATA["flux_difference"].count(
+    "time"
+).rename(site="validation_tower").load()
+
+DIFFERENCES_NORMALIZED_CV_ERR = (
+    CROSS_TOWER_FIT_ERROR_DS["cross_validation_error"] /
+    N_DIFFERENCES
+)
+
+differences_min_err = max(
+    DIFFERENCES_NORMALIZED_CV_ERR.where(
+        DIFFERENCES_NORMALIZED_CV_ERR.coords["training_tower"] !=
+        DIFFERENCES_NORMALIZED_CV_ERR.coords["validation_tower"]
+    ).min(),
+    0
+)
+differences_max_err = DIFFERENCES_NORMALIZED_CV_ERR.where(
+    DIFFERENCES_NORMALIZED_CV_ERR.coords["training_tower"] !=
+    DIFFERENCES_NORMALIZED_CV_ERR.coords["validation_tower"]
+).quantile(0.95)
+
+
+fig, axes = plt.subplots(5, 5, sharex=True, sharey=True, figsize=(6.5, 7))
+for ax in axes.flat:
+    ax.set_visible(False)
+
+for corr_fun, ax in zip(
+        DIFFERENCES_NORMALIZED_CV_ERR.coords["correlation_function"], axes.flat
+):
+    ax.set_visible(True)
+    image = ax.imshow(
+        DIFFERENCES_NORMALIZED_CV_ERR.sel(
+            correlation_function=corr_fun
+        ),
+        vmin=differences_min_err, vmax=differences_max_err
+    )
+    ax.set_title(corr_fun.coords["correlation_function_short_name"].values)
+
+fig.subplots_adjust(hspace=0.4)
+cbar = fig.colorbar(
+    image, ax=axes[-1, 1:], orientation="horizontal", extend="both",
+    fraction=1
+)
+cbar.set_label("Cross-validation error over number of differences")
+fig.savefig("tower-cross-validation-differences-normalized-mismatch.png")
+plt.close(fig)
+
+############################################################
+# Plots normalized by the mean CV error for each validation tower
+MEAN_CV_ERR = CROSS_TOWER_FIT_ERROR_DS["cross_validation_error"].mean(
+    ("correlation_function", "training_tower")
+)
+
+MEAN_NORMALIZED_CV_ERR = (
+    CROSS_TOWER_FIT_ERROR_DS["cross_validation_error"] /
+    MEAN_CV_ERR
+)
+
+mean_min_err = max(
+    MEAN_NORMALIZED_CV_ERR.where(
+        MEAN_NORMALIZED_CV_ERR.coords["training_tower"] !=
+        MEAN_NORMALIZED_CV_ERR.coords["validation_tower"]
+    ).min(),
+    0
+)
+mean_max_err = MEAN_NORMALIZED_CV_ERR.where(
+    MEAN_NORMALIZED_CV_ERR.coords["training_tower"] !=
+    MEAN_NORMALIZED_CV_ERR.coords["validation_tower"]
+).quantile(0.95)
+
+SORT_KEYS = {
+    "alphabetical": lambda site: site,
+    "vegetation": lambda site:  (
+        AMERIFLUX_MINUS_CASA_DATA["Vegetation"].sel(site=site).values[()],
+        site
+    ),
+    "climate class": lambda site:  (
+        AMERIFLUX_MINUS_CASA_DATA["Climate_Cl"].sel(site=site).values[()],
+        site
+    ),
+    "latitude": lambda site:  (
+        AMERIFLUX_MINUS_CASA_DATA["Latitude"].sel(site=site).values[()],
+        site
+    ),
+    "longitude": lambda site:  (
+        AMERIFLUX_MINUS_CASA_DATA["Longitude"].sel(site=site).values[()],
+        site
+    ),
+    "mean temp": lambda site:  (
+        AMERIFLUX_MINUS_CASA_DATA["Mean_Temp"].sel(site=site).values[()],
+        site
+    ),
+    "mean precip": lambda site:  (
+        AMERIFLUX_MINUS_CASA_DATA["Mean_Preci"].sel(site=site).values[()],
+        site
+    ),
+}
+
+for sort_name, sort_key in SORT_KEYS.items():
+    sorted_towers = sorted(AUTOCORRELATION_FOR_CURVE_FIT.keys(), key=sort_key)
+    fig, axes = plt.subplots(5, 5, sharex=True, sharey=True, figsize=(6.5, 7))
+    for ax in axes.flat:
+        ax.set_visible(False)
+    for corr_fun, ax in zip(
+            MEAN_NORMALIZED_CV_ERR.coords["correlation_function"], axes.flat
+    ):
+        ax.set_visible(True)
+        image = ax.imshow(
+            MEAN_NORMALIZED_CV_ERR.sel(
+                correlation_function=corr_fun,
+                training_tower=sorted_towers,
+                validation_tower=sorted_towers,
+            ),
+            vmin=mean_min_err, vmax=mean_max_err
+        )
+        ax.set_title(corr_fun.coords["correlation_function_short_name"].values)
+    fig.subplots_adjust(hspace=0.4)
+    cbar = fig.colorbar(
+        image, ax=axes[-1, 1:], orientation="horizontal", extend="both",
+        fraction=1
+    )
+    cbar.set_label(
+        "Cross-validation error over validation-tower mean\n"
+        "Sort order: {name:s}".format(name=sort_name)
+    )
+    fig.savefig(
+        "tower-cross-validation-mean-normalized-mismatch-sort-{name:s}.png"
+        .format(name=sort_name.replace(" ", "-"))
+    )
+    plt.close(fig)
