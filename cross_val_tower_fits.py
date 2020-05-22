@@ -22,10 +22,9 @@ import flux_correlation_function_fits
 from correlation_utils import get_autocorrelation_stats
 
 from correlation_function_fits import (
-    GLOBAL_DICT, CorrelationPart, PartForm,
-    is_valid_combination, get_full_expression,
+    CorrelationPart, PartForm,
+    is_valid_combination,
     get_full_parameter_list,
-    get_weighted_fit_expression,
 )
 
 CORRELATION_PARTS_LIST = [
@@ -548,9 +547,13 @@ for combination in CORRELATION_PARTS_LIST:
                 },
                 {
                     "parameter_name": (("parameter_name",), parameter_list),
-                    "parameter_name_adjoint": (("parameter_name_adjoint",), parameter_list),
+                    "parameter_name_adjoint": (
+                        ("parameter_name_adjoint",), parameter_list
+                    ),
                     "training_tower": ((), training_tower),
-                    "correlation_function": ((), correlation_function_long_name),
+                    "correlation_function": (
+                        (), correlation_function_long_name
+                    ),
                 },
             )
         )
@@ -587,7 +590,9 @@ FUNCTION_PARAMS_AND_COV_DS = xarray.concat(
      for ds_list in FUNCTION_PARAMS_AND_COV],
     dim="correlation_function"
 )
-CROSS_TOWER_FIT_ERROR_DS = CROSS_TOWER_FIT_ERROR_DS.update(FUNCTION_PARAMS_AND_COV_DS)
+CROSS_TOWER_FIT_ERROR_DS = CROSS_TOWER_FIT_ERROR_DS.update(
+    FUNCTION_PARAMS_AND_COV_DS
+)
 
 encoding = {name: {"_FillValue": -9.999e9, "zlib": True}
             for name in CROSS_TOWER_FIT_ERROR_DS.data_vars}
