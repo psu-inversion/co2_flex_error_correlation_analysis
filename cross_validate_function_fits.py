@@ -341,34 +341,13 @@ for site_name in AMERIFLUX_MINUS_CASA_DATA.indexes["site"]:
             except (RuntimeError, ValueError) as err:
                 print(err, "Curve fit failed, next function", sep="\n")
                 continue
-            opt_res = scipy.optimize.minimize(
-                fun_to_optimize,
-                opt_params,
-                (
-                    acf_lags_train,
-                    corr_data_train["acf"].astype(np.float32).values,
-                    corr_data_train["pair_counts"].astype(np.float32).values,
-                ),
-                jac="loop" in name_to_optimize,
-                bounds=scipy.optimize.Bounds(lower_bounds, upper_bounds),
-                method="L-BFGS-B",
-                options={
-                    "maxcor": 30,  # "iprint": 101
-                },
-            )
-            # # Go to next function if it fails
-            # if not opt_res.success:
-            #     print(opt_res.message)
-            #     print("No convergence, next function")
-            #     continue
-            print(opt_res.x)
             print(opt_params)
 
             # If this fit's cross-validation score is worse than the
             # currently-stored one, don't bother recording.
             if (
                     fun_to_optimize(
-                        opt_res.x,
+                        opt_params,
                         acf_lags_validate,
                         corr_data_validate["acf"].astype(np.float32).values,
                         corr_data_validate["pair_counts"].astype(
@@ -384,20 +363,25 @@ for site_name in AMERIFLUX_MINUS_CASA_DATA.indexes["site"]:
 
             # Otherwise, save the results
             COEF_DATA.loc[(site_name, func_short_name), parameter_list] = (
-                opt_res.x
+                opt_params
             )
             COEF_VAR_DATA.loc[(site_name, func_short_name), parameter_list] = (
-                np.diag(opt_res.hess_inv.todense())
+                np.diag(param_cov)
             )
             CORRELATION_FIT_ERROR.loc[
                 (site_name, func_short_name),
                 ("function_optimized", "weighted_error_in_sample"),
-            ] = opt_res.fun
+            ] = fun_to_optimize(
+                opt_params,
+                acf_lags_train,
+                corr_data_train["acf"].astype(np.float32).values,
+                corr_data_train["pair_counts"].astype(np.float32).values,
+            )[0]
             CORRELATION_FIT_ERROR.loc[
                 (site_name, func_short_name),
                 ("function_optimized", "weighted_error_out_of_sample"),
             ] = fun_to_optimize(
-                opt_res.x,
+                opt_params,
                 acf_lags_validate,
                 corr_data_validate["acf"].astype(np.float32).values,
                 corr_data_validate["pair_counts"].astype(np.float32).values,
@@ -406,7 +390,7 @@ for site_name in AMERIFLUX_MINUS_CASA_DATA.indexes["site"]:
                 (site_name, func_short_name),
                 ("other_function", "weighted_error_in_sample"),
             ] = fun_to_check(
-                opt_res.x,
+                opt_params,
                 acf_lags_train,
                 corr_data_train["acf"].astype(np.float32).values,
                 corr_data_train["pair_counts"].astype(np.float32).values,
@@ -415,7 +399,7 @@ for site_name in AMERIFLUX_MINUS_CASA_DATA.indexes["site"]:
                 (site_name, func_short_name),
                 ("other_function", "weighted_error_out_of_sample"),
             ] = fun_to_check(
-                opt_res.x,
+                opt_params,
                 acf_lags_validate,
                 corr_data_validate["acf"].astype(np.float32).values,
                 corr_data_validate["pair_counts"].astype(np.float32).values,
