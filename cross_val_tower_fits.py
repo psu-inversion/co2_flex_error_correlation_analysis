@@ -659,7 +659,9 @@ for sort_name, sort_key in SORT_KEYS.items():
         ax.set_visible(True)
         image = ax.imshow(
             CROSS_TOWER_FIT_ERROR_DS["cross_validation_error"].sel(
-                correlation_function=corr_fun
+                correlation_function=corr_fun,
+                training_tower=sorted_towers,
+                validation_tower=sorted_towers,
             ),
             vmin=min_err, vmax=max_err
         )
@@ -715,7 +717,9 @@ for sort_name, sort_key in SORT_KEYS.items():
         ax.set_visible(True)
         image = ax.imshow(
             PAIRS_NORMALIZED_CV_ERR.sel(
-                correlation_function=corr_fun
+                correlation_function=corr_fun,
+                training_tower=sorted_towers,
+                validation_tower=sorted_towers,
             ),
             vmin=pairs_min_err, vmax=pairs_max_err
         )
@@ -770,7 +774,9 @@ for sort_name, sort_key in SORT_KEYS.items():
         ax.set_visible(True)
         image = ax.imshow(
             DIFFERENCES_NORMALIZED_CV_ERR.sel(
-                correlation_function=corr_fun
+                correlation_function=corr_fun,
+                training_tower=sorted_towers,
+                validation_tower=sorted_towers,
             ),
             vmin=differences_min_err, vmax=differences_max_err
         )
