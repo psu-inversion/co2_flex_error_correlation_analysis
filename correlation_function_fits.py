@@ -103,6 +103,9 @@ class PartForm(Enum):
     PERIODIC = P
     EXPSIN2 = P
 
+    G = "Geostatistical"
+    GEOSTAT = G
+
     def get_short_name(self):
         """Get a short name for the form.
 
@@ -161,6 +164,11 @@ class PartForm(Enum):
         elif self == PartForm.PERIODIC:
             main = (
                 "exp(-(sin(PI_OVER_{time:s} * tdata) / {0:s}_width) ** 2)"
+            )
+        elif self == PartForm.GEOSTAT:
+            main = (
+                "where((tdata % DAYS_PER_{time:s}) < 0.125, 1 - 8 * (tdata % DAYS_PER_{time:s}), "
+                "where((tdata % DAYS_PER_{time:s}) > 0.875, 8 * (tdata % DAYS_PER_{time:s} - 0.875), 0))"
             )
 
         if not part.is_modulation():
