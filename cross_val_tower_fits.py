@@ -285,8 +285,8 @@ CROSS_TOWER_FIT_ERROR_DS = xarray.Dataset(
         "correlation_function": (
             ("correlation_function",),
             [
-                "daily_{0.name:s}_daily_modulation_{1.name:s}_"
-                "annual_{2.name:s}".format(*parts)
+                "daily_{0.value:s}_daily_modulation_{1.value:s}_"
+                "annual_{2.value:s}".format(*parts)
                 for parts in CORRELATION_PARTS_LIST
             ]
         ),
@@ -505,8 +505,8 @@ for combination in CORRELATION_PARTS_LIST:
     )
     FUNCTION_PARAMS_AND_COV.append([])
     correlation_function_long_name = (
-        "daily_{0.name:s}_daily_modulation_{1.name:s}_"
-        "annual_{2.name:s}".format(*combination)
+        "daily_{0.value:s}_daily_modulation_{1.value:s}_"
+        "annual_{2.value:s}".format(*combination)
     )
     for training_tower in AUTOCORRELATION_FOR_CURVE_FIT:
         print("Now training on:", training_tower)
