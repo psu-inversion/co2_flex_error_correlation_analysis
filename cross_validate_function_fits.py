@@ -324,7 +324,9 @@ for site_name in AMERIFLUX_MINUS_CASA_DATA.indexes["site"]:
                 opt_params, param_cov = scipy.optimize.curve_fit(
                     getattr(
                         flux_correlation_function_fits,
-                        "{fun_name:s}_curve_ne".format(fun_name=func_short_name),
+                        "{fun_name:s}_curve_ne".format(
+                            fun_name=func_short_name
+                        ),
                     ),
                     acf_lags_train.astype(np.float32),
                     corr_data_train["acf"].astype(np.float32).values,
@@ -369,7 +371,9 @@ for site_name in AMERIFLUX_MINUS_CASA_DATA.indexes["site"]:
                         opt_res.x,
                         acf_lags_validate,
                         corr_data_validate["acf"].astype(np.float32).values,
-                        corr_data_validate["pair_counts"].astype(np.float32).values,
+                        corr_data_validate["pair_counts"].astype(
+                            np.float32
+                        ).values,
                     )[0] >
                     CORRELATION_FIT_ERROR.loc[
                         (site_name, func_short_name),
@@ -433,6 +437,9 @@ for site_name in AMERIFLUX_MINUS_CASA_DATA.indexes["site"]:
     xticks = np.arange(0, max_lag, 365)
     for ax in axes.flat:
         ax.set_xticks(xticks)
+    for ax in axes[-1, :]:
+        ax.set_xlabel("Time difference (years)")
+        ax.set_xticklabels(range(len(xticks)))
     sorted_fits = CORRELATION_FIT_ERROR.loc[
         (site_name, slice(None)), ("function_optimized", slice(None))
     ].sort_values(
@@ -468,11 +475,12 @@ for site_name in AMERIFLUX_MINUS_CASA_DATA.indexes["site"]:
     )
     xticks_short = pd.timedelta_range(start=0, freq="7D", periods=7)
     xtick_labels = ["{n:d} days".format(n=i * 7) for i in range(len(xticks_short))]
-    axes[0, 0].set_xlim(xticks_short[[0, -1]].astype(float))
+    axes[0, 0].set_xlim(xticks_short[[0, -1]].values.astype(float))
     for ax in axes.flat:
-        ax.set_xticks(xticks_short)
+        ax.set_xticks(xticks_short.values.astype(float))
     for ax in axes[-1, :]:
         ax.set_xticklabels(xtick_labels)
+        ax.set_xlabel("Time difference (days)")
     fig.savefig(
         "{site_name:s}-cross-validation-function-fits-short.png"
         .format(site_name=site_name)
