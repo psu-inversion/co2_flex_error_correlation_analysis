@@ -127,7 +127,7 @@ class PartForm(Enum):
         list of str
         """
         result = []
-        if not part.is_modulation():
+        if not part.is_modulation() and self is not PartForm.NONE:
             result.extend(("{0:s}_coef", "{0:s}_timescale"))
         if self == PartForm.COSINE:
             result.extend(("{0:s}_coef1", "{0:s}_coef2"))
