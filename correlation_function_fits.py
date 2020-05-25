@@ -229,6 +229,12 @@ class PartForm(Enum):
                 "exp(-(sin(PI_OVER_{time:s} * tdata) / {0:s}_width) ** 2) * "
                 "2 * sin(PI_OVER_{time:s} * tdata) ** 2 / {0:s}_width ** 3",
             ]
+        elif self == PartForm.GEOSTAT:
+            main = (
+                "where((tdata % DAYS_PER_{time:s}) < 0.125, 1 - 8 * (tdata % DAYS_PER_{time:s}), "
+                "where((tdata % DAYS_PER_{time:s}) > 0.875, 8 * (tdata % DAYS_PER_{time:s} - 0.875), 0))"
+            )
+            main_parts = []
 
         if not part.is_modulation():
             # The exponential die-off is only for the main
