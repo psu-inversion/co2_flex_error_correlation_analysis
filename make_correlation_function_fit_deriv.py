@@ -12,7 +12,6 @@ import numpy as np
 
 from setuptools import setup, Extension
 from Cython.Build import cythonize
-from pythran.dist import PythranExtension, PythranBuildExt
 
 from correlation_function_fits import (
     GLOBAL_DICT, CorrelationPart, PartForm,
@@ -396,104 +395,6 @@ def {function_name:s}_curve_loop(
     ),
 ))
 
-with open(OUT_FILE_NAME.replace(".pyx", "_py.py"), "w") as out_file:
-    out_file.write("""# ~*~ coding: utf8 ~*~
-import numpy as np
-
-HOURS_PER_DAY = 24.
-DAYS_PER_DAY = 1.
-DAYS_PER_WEEK = 7.
-DAYS_PER_FORTNIGHT = 14.
-DAYS_PER_YEAR = 365.2425
-DAYS_PER_DECADE = 10 * DAYS_PER_YEAR
-
-HOURS_PER_YEAR = HOURS_PER_DAY * DAYS_PER_YEAR
-
-PI_OVER_DAY = np.pi / DAYS_PER_DAY
-TWO_PI_OVER_DAY = 2 * PI_OVER_DAY
-FOUR_PI_OVER_DAY = 2 * TWO_PI_OVER_DAY
-
-PI_OVER_YEAR = np.pi / DAYS_PER_YEAR
-TWO_PI_OVER_YEAR = 2 * PI_OVER_YEAR
-FOUR_PI_OVER_YEAR = 2 * TWO_PI_OVER_YEAR
-
-GLOBAL_DICT = {
-    "HOURS_PER_DAY": HOURS_PER_DAY,
-    "DAYS_PER_WEEK": DAYS_PER_WEEK,
-    "DAYS_PER_FORTNIGHT": DAYS_PER_FORTNIGHT,
-    "DAYS_PER_YEAR": DAYS_PER_YEAR,
-    "DAYS_PER_DECADE": DAYS_PER_DECADE,
-    "PI_OVER_DAY": PI_OVER_DAY,
-    "TWO_PI_OVER_DAY": TWO_PI_OVER_DAY,
-    "FOUR_PI_OVER_DAY": FOUR_PI_OVER_DAY,
-    "PI_OVER_YEAR": PI_OVER_YEAR,
-    "TWO_PI_OVER_YEAR": TWO_PI_OVER_YEAR,
-    "FOUR_PI_OVER_YEAR": FOUR_PI_OVER_YEAR,
-}
-""")
-    for forms in itertools.product(PartForm, PartForm, PartForm):
-        if not is_valid_combination(*forms):
-            continue
-        print(forms)
-        out_file.write("""
-#pythran export {func_name:s}_fit_np(float64[{n_params:d}], float32[], float32[], float32[])
-def {func_name:s}_fit_np(parameters, tdata, empirical_correlogram, num_pairs):
-{param_names_from_parameters:s}
-    sin = np.sin
-    cos = np.cos
-    exp = np.exp
-    where = np.where
-    return {weighted_sum_expr:s}
-""".format(
-    func_name="_".join([
-        "{0:s}{1:s}".format(
-            part.get_short_name(),
-            form.get_short_name(),
-        )
-        for part, form in zip(CorrelationPart, forms)
-    ]),
-    weighted_sum_expr=get_weighted_fit_expression(*forms),
-    param_names_from_parameters="".join([
-        "    {param_name:s} = parameters[{i:d}]\n"
-        .format(i=i, param_name=param_name)
-        for i, param_name in enumerate(get_full_parameter_list(*forms))
-    ]),
-    n_params=len(get_full_parameter_list(*forms)),
-))
-
-        out_file.write("""
-#pythran export {func_name:s}_curve_np(float32[{n_params:d}], {float64_spec:s})
-def {func_name:s}_curve_np(
-    tdata,
-{parameters:s}
-):
-    sin = np.sin
-    cos = np.cos
-    exp = np.exp
-    where = np.where
-    return {full_expr:s}
-""".format(
-    func_name="_".join([
-        "{0:s}{1:s}".format(
-            part.get_short_name(),
-            form.get_short_name(),
-        )
-        for part, form in zip(CorrelationPart, forms)
-    ]),
-    parameters="".join([
-        "    {param:s},\n".format(param=param_name)
-        for param_name in get_full_parameter_list(*forms)
-    ]),
-    full_expr=get_full_expression(*forms),
-    float32_spec=", ".join(
-        "float32" for _param_name in get_full_parameter_list(*forms)
-    ),
-    float64_spec=", ".join(
-        "float64" for _param_name in get_full_parameter_list(*forms)
-    ),
-    n_params=len(get_full_parameter_list(*forms)),
-))
-
 
 ############################################################
 # Now build the module
@@ -506,10 +407,6 @@ setup(
                 OUT_FILE_NAME.replace(".pyx", ""),
                 [OUT_FILE_NAME],
                 include_dirs=[np.get_include()],
-            ),
-            PythranExtension(
-                OUT_FILE_NAME.replace(".pyx", "_pyth"),
-                [OUT_FILE_NAME.replace(".pyx", "_py.py")],
             ),
         ],
         include_path=[np.get_include()],
