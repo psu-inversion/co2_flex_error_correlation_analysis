@@ -33,6 +33,7 @@ from cython.view cimport array as cvarray
 import numpy as np
 cimport numpy as np
 import numexpr as ne
+from numpy cimport PyArray_Where as where
 
 ctypedef fused floating_type:
     np.float32_t
