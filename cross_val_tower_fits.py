@@ -192,128 +192,6 @@ AMERIFLUX_MINUS_CASA_DATA = AMERIFLUX_MINUS_CASA_DATA.sel(
     site=SITES_TO_KEEP
 ).persist()
 
-############################################################
-# Set up dataset for results
-CROSS_TOWER_FIT_ERROR_DS = xarray.Dataset(
-    {
-        "cross_validation_error": (
-            ("correlation_function", "training_tower", "validation_tower"),
-            np.full(
-                (
-                    len(CORRELATION_PARTS_LIST),
-                    AMERIFLUX_MINUS_CASA_DATA.dims["site"],
-                    AMERIFLUX_MINUS_CASA_DATA.dims["site"],
-                ),
-                np.nan,
-                # I could probably get away with storing float16, but I
-                # don't think netcdf can handle that.
-                dtype=np.float32
-            ),
-            {
-                "long_name":
-                "flux_error_correlation_function_cross_validation_error",
-                "comment": "lower is better",
-                "units": "1",
-                "valid_min": 0,
-            },
-        ),
-        "optimized_parameters": (
-            ("correlation_function", "training_tower", "parameter_name"),
-            np.full(
-                (
-                    len(CORRELATION_PARTS_LIST),
-                    len(SITES_TO_KEEP),
-                    len(STARTING_PARAMS),
-                ),
-                np.nan,
-                dtype=np.float32,
-            ),
-            {
-                "long_name":
-                "flux_error_correlation_function_fitted_parameters",
-                "units": [
-                    "1",  #    daily_coef = 0.2,
-                    "1",  #    daily_coef1 = .7,
-                    "1",  #    daily_coef2 = .3,
-                    "1",  #    daily_width = .5,
-                    "fortnights",  #    daily_timescale = 60,  # fortnights
-                    "1",  #    dm_width = .8,
-                    "1",  #    dm_coef1 = .3,
-                    "1",  #    dm_coef2 = +.1,
-                    "1",  #    ann_coef1 = +.4,
-                    "1",  #    ann_coef2 = +.3,
-                    "1",  #    ann_coef = 0.1,
-                    "1",  #    ann_width = .3,
-                    "decades",  #    ann_timescale = 3.,  # decades
-                    "1",  #    resid_coef = 0.05,
-                    "fortnights",  #    resid_timescale = 2.,  # fortnights
-                    "1",  #    ec_coef = 0.7,
-                    "hours",  #    ec_timescale = 2.,  # hours
-                ],
-            },
-        ),
-        "optimized_parameters_estimated_covariance_matrix": (
-            ("correlation_function", "training_tower",
-             "parameter_name_adjoint", "parameter_name"),
-            np.full(
-                (
-                    len(CORRELATION_PARTS_LIST),
-                    len(SITES_TO_KEEP),
-                    len(STARTING_PARAMS),
-                    len(STARTING_PARAMS),
-                ),
-                np.nan,
-                dtype=np.float32,
-            ),
-            {
-                "long_name":
-                "flux_error_correlation_function_fitted_parameters"
-                " covariance_matrix",
-            },
-        ),
-    },
-
-    {
-        "training_tower": (
-            ("training_tower",),
-            AMERIFLUX_MINUS_CASA_DATA.coords["site"],
-        ),
-        "validation_tower": (
-            ("validation_tower",),
-            AMERIFLUX_MINUS_CASA_DATA.coords["site"],
-        ),
-        "correlation_function": (
-            ("correlation_function",),
-            [
-                "daily_{0.value:s}_daily_modulation_{1.value:s}_"
-                "annual_{2.value:s}".format(*parts)
-                for parts in CORRELATION_PARTS_LIST
-            ]
-        ),
-        "correlation_function_short_name": (
-            ("correlation_function",),
-            [
-                "_".join([
-                    "{0:s}{1:s}".format(
-                        part.get_short_name(),
-                        form.get_short_name(),
-                    )
-                    for part, form in zip(CorrelationPart, forms)
-                ])
-                for forms in CORRELATION_PARTS_LIST
-            ],
-        ),
-        "parameter_name": (
-            ("parameter_name",),
-            np.array(list(STARTING_PARAMS.keys())),
-        ),
-        "parameter_name_adjoint": (
-            ("parameter_name_adjoint",),
-            np.array(list(STARTING_PARAMS.keys())),
-        ),
-    },
-)
-
 TIME_LAG_INDEX = pd.timedelta_range(
     start=0, freq="1H", periods=AMERIFLUX_MINUS_CASA_DATA.dims["time"]
 )
@@ -447,6 +325,128 @@ for tower in SITES_TO_KEEP:
     if not has_enough_data(corr_data["flux_error_n_pairs"]):
         continue
     AUTOCORRELATION_FOR_CURVE_FIT[tower] = corr_data
+
+############################################################
+# Set up dataset for results
+CROSS_TOWER_FIT_ERROR_DS = xarray.Dataset(
+    {
+        "cross_validation_error": (
+            ("correlation_function", "training_tower", "validation_tower"),
+            np.full(
+                (
+                    len(CORRELATION_PARTS_LIST),
+                    AMERIFLUX_MINUS_CASA_DATA.dims["site"],
+                    AMERIFLUX_MINUS_CASA_DATA.dims["site"],
+                ),
+                np.nan,
+                # I could probably get away with storing float16, but I
+                # don't think netcdf can handle that.
+                dtype=np.float32
+            ),
+            {
+                "long_name":
+                "flux_error_correlation_function_cross_validation_error",
+                "comment": "lower is better",
+                "units": "1",
+                "valid_min": 0,
+            },
+        ),
+        "optimized_parameters": (
+            ("correlation_function", "training_tower", "parameter_name"),
+            np.full(
+                (
+                    len(CORRELATION_PARTS_LIST),
+                    len(SITES_TO_KEEP),
+                    len(STARTING_PARAMS),
+                ),
+                np.nan,
+                dtype=np.float32,
+            ),
+            {
+                "long_name":
+                "flux_error_correlation_function_fitted_parameters",
+                "units": [
+                    "1",  #    daily_coef = 0.2,
+                    "1",  #    daily_coef1 = .7,
+                    "1",  #    daily_coef2 = .3,
+                    "1",  #    daily_width = .5,
+                    "fortnights",  #    daily_timescale = 60,  # fortnights
+                    "1",  #    dm_width = .8,
+                    "1",  #    dm_coef1 = .3,
+                    "1",  #    dm_coef2 = +.1,
+                    "1",  #    ann_coef1 = +.4,
+                    "1",  #    ann_coef2 = +.3,
+                    "1",  #    ann_coef = 0.1,
+                    "1",  #    ann_width = .3,
+                    "decades",  #    ann_timescale = 3.,  # decades
+                    "1",  #    resid_coef = 0.05,
+                    "fortnights",  #    resid_timescale = 2.,  # fortnights
+                    "1",  #    ec_coef = 0.7,
+                    "hours",  #    ec_timescale = 2.,  # hours
+                ],
+            },
+        ),
+        "optimized_parameters_estimated_covariance_matrix": (
+            ("correlation_function", "training_tower",
+             "parameter_name_adjoint", "parameter_name"),
+            np.full(
+                (
+                    len(CORRELATION_PARTS_LIST),
+                    len(SITES_TO_KEEP),
+                    len(STARTING_PARAMS),
+                    len(STARTING_PARAMS),
+                ),
+                np.nan,
+                dtype=np.float32,
+            ),
+            {
+                "long_name":
+                "flux_error_correlation_function_fitted_parameters"
+                " covariance_matrix",
+            },
+        ),
+    },
+
+    {
+        "training_tower": (
+            ("training_tower",),
+            sorted(AUTOCORRELATION_FOR_CURVE_FIT.keys()),
+        ),
+        "validation_tower": (
+            ("validation_tower",),
+            sorted(AUTOCORRELATION_FOR_CURVE_FIT.keys()),
+        ),
+        "correlation_function": (
+            ("correlation_function",),
+            [
+                "daily_{0.value:s}_daily_modulation_{1.value:s}_"
+                "annual_{2.value:s}".format(*parts)
+                for parts in CORRELATION_PARTS_LIST
+            ]
+        ),
+        "correlation_function_short_name": (
+            ("correlation_function",),
+            [
+                "_".join([
+                    "{0:s}{1:s}".format(
+                        part.get_short_name(),
+                        form.get_short_name(),
+                    )
+                    for part, form in zip(CorrelationPart, forms)
+                ])
+                for forms in CORRELATION_PARTS_LIST
+            ],
+        ),
+        "parameter_name": (
+            ("parameter_name",),
+            np.array(list(STARTING_PARAMS.keys())),
+        ),
+        "parameter_name_adjoint": (
+            ("parameter_name_adjoint",),
+            np.array(list(STARTING_PARAMS.keys())),
+        ),
+    },
+)
 
 ############################################################
 # Actually do the cross-validation
