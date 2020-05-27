@@ -155,6 +155,9 @@ for norm_name, norm_val in NORMALIZATIONS.items():
         )
         fig.savefig(
             "tower-cross-validation-mismatch-over-{normalization:s}-sort-{name:s}.png"
-            .format(name=sort_name.replace(" ", "-"), normalization=norm_name)
+            .format(
+                name=sort_name.replace(" ", "-"),
+                normalization=norm_name.replace(" ", "-"),
+            )
         )
         plt.close(fig)
