@@ -26,7 +26,8 @@ with open(OUT_FILE_NAME, "w") as out_file:
     out_file.write("""# cython: embedsignature=True
 # cython: language_level=3str
 # cython: cdivision=True
-# cython: wraparound=False
+# cython: wraparound=True
+# cython: boundscheck=True
 from libc cimport math
 from cython.view cimport array as cvarray
 
@@ -413,8 +414,8 @@ setup(
         compiler_directives=dict(
             embedsignature=True,
             cdivision=True,
-            wraparound=False,
-            boundscheck=False,
+            wraparound=True,
+            boundscheck=True,
         ),
         annotate=True,
     ),
