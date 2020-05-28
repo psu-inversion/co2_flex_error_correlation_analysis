@@ -333,14 +333,14 @@ def {function_name:s}_curve_loop(
         if resid_timescale > 0:
             resid_corr = resid_coef * exp(-tdata / resid_timescale)
             here_corr += resid_corr
-            deriv[i][n_parameters - 4] = exp(-tdata / resid_timescale)
-            deriv[i][n_parameters - 3] = resid_corr * tdata / resid_timescale ** 2 * DAYS_PER_FORTNIGHT
+            deriv[i, n_parameters - 4] = exp(-tdata / resid_timescale)
+            deriv[i, n_parameters - 3] = resid_corr * tdata / resid_timescale ** 2 * DAYS_PER_FORTNIGHT
 
         if ec_timescale > 0:
             ec_corr = ec_coef * exp(-tdata / ec_timescale)
             here_corr += ec_corr
-            deriv[i][n_parameters - 2] = exp(-tdata / ec_timescale)
-            deriv[i][n_parameters - 1] = ec_corr * tdata / ec_timescale ** 2 / HOURS_PER_DAY
+            deriv[i, n_parameters - 2] = exp(-tdata / ec_timescale)
+            deriv[i, n_parameters - 1] = ec_corr * tdata / ec_timescale ** 2 / HOURS_PER_DAY
 
         curve[i] = here_corr
 
@@ -368,7 +368,7 @@ def {function_name:s}_curve_loop(
     ),
     annual_form=forms[2].get_expression(CorrelationPart.ANNUAL),
     accum_day_deriv="\n        ".join(
-        "deriv[i][{j:d}] = {deriv_piece:s} * dm_corr".format(
+        "deriv[i, {j:d}] = {deriv_piece:s} * dm_corr".format(
             j=j, deriv_piece=deriv_piece
         )
         for j, deriv_piece in enumerate(
@@ -376,7 +376,7 @@ def {function_name:s}_curve_loop(
         )
     ),
     accum_dm_deriv="\n        ".join(
-        "deriv[i][{j:d}] = daily_corr * {deriv_piece:s}".format(
+        "deriv[i, {j:d}] = daily_corr * {deriv_piece:s}".format(
             j=j, deriv_piece=deriv_piece
         )
         for j, deriv_piece in enumerate(
@@ -385,7 +385,7 @@ def {function_name:s}_curve_loop(
         )
     ),
     accum_ann_deriv="\n        ".join(
-        "deriv[i][{j:d}] = {deriv_piece:s}".format(
+        "deriv[i, {j:d}] = {deriv_piece:s}".format(
             j=j, deriv_piece=deriv_piece
         )
         for j, deriv_piece in enumerate(
