@@ -35,7 +35,7 @@ from cython.view cimport array as cvarray
 import numpy as np
 cimport numpy as np
 import numexpr as ne
-from numpy cimport PyArray_Where as where
+# from numpy cimport PyArray_Where as where
 
 ctypedef fused floating_type:
     np.float32_t
@@ -63,6 +63,11 @@ cdef inline floating_type cyexp(floating_type x) nogil:
         return expf(x)
     elif floating_type is double:
         return math.exp(x)
+
+cdef inline floating_type where(bint cond, floating_type a, floating_type b) nogil:
+    if cond:
+        return a
+    return b
 
 ctypedef floating_type (*float_fun)(floating_type) nogil
 
