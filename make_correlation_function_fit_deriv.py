@@ -28,6 +28,7 @@ with open(OUT_FILE_NAME, "w") as out_file:
 # cython: cdivision=True
 # cython: wraparound=True
 # cython: boundscheck=True
+# cython: gdb_debug=True
 from libc cimport math
 from cython.view cimport array as cvarray
 
@@ -418,5 +419,6 @@ setup(
             boundscheck=True,
         ),
         annotate=True,
+        gdb_debug=True,
     ),
 )
