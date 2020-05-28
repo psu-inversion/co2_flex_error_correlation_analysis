@@ -437,6 +437,38 @@ CROSS_TOWER_FIT_ERROR_DS = xarray.Dataset(
                 for forms in CORRELATION_PARTS_LIST
             ],
         ),
+        "has_daily_cycle": (
+            ("correlation_function",),
+            np.array([forms[0] != PartForm.NONE for forms in CORRELATION_PARTS_LIST], dtype=bool),
+            {
+                "long_name": "has_daily_cycle",
+                "description":
+                    "whether the associated correlation function attempts to fit a "
+                    "daily cycle in the autocorrelations",
+            },
+        ),
+        "has_annual_cycle": (
+            ("correlation_function",),
+            np.array([forms[2] != PartForm.NONE for forms in CORRELATION_PARTS_LIST], dtype=bool),
+            {
+                "long_name": "has_annual_cycle",
+                "description":
+                    "whether the associated correlation function attempts to fit an "
+                    "annual cycle in the autocorrelations",
+            }
+        ),
+        "daily_cycle": (
+            ("correlation_function",),
+            np.array([forms[0].value for forms in CORRELATION_PARTS_LIST]),
+        ),
+        "annual_modulation_of_daily_cycle": (
+            ("correlation_function",),
+            np.array([forms[1].value for forms in CORRELATION_PARTS_LIST]),
+        ),
+        "annual_cycle": (
+            ("correlation_function",),
+            np.array([forms[2].value for forms in CORRELATION_PARTS_LIST]),
+        ),
         "parameter_name": (
             ("parameter_name",),
             np.array(list(STARTING_PARAMS.keys())),
