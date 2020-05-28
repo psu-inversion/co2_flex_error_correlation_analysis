@@ -335,8 +335,8 @@ CROSS_TOWER_FIT_ERROR_DS = xarray.Dataset(
             np.full(
                 (
                     len(CORRELATION_PARTS_LIST),
-                    AMERIFLUX_MINUS_CASA_DATA.dims["site"],
-                    AMERIFLUX_MINUS_CASA_DATA.dims["site"],
+                    len(AUTOCORRELATION_FOR_CURVE_FIT),
+                    len(AUTOCORRELATION_FOR_CURVE_FIT),
                 ),
                 np.nan,
                 # I could probably get away with storing float16, but I
@@ -356,7 +356,7 @@ CROSS_TOWER_FIT_ERROR_DS = xarray.Dataset(
             np.full(
                 (
                     len(CORRELATION_PARTS_LIST),
-                    len(SITES_TO_KEEP),
+                    len(AUTOCORRELATION_FOR_CURVE_FIT),
                     len(STARTING_PARAMS),
                 ),
                 np.nan,
@@ -392,7 +392,7 @@ CROSS_TOWER_FIT_ERROR_DS = xarray.Dataset(
             np.full(
                 (
                     len(CORRELATION_PARTS_LIST),
-                    len(SITES_TO_KEEP),
+                    len(AUTOCORRELATION_FOR_CURVE_FIT),
                     len(STARTING_PARAMS),
                     len(STARTING_PARAMS),
                 ),
