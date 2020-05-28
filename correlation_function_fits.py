@@ -167,8 +167,8 @@ class PartForm(Enum):
             )
         elif self == PartForm.GEOSTAT:
             main = (
-                "where((tdata % DAYS_PER_{time:s}) < 0.125, 1 - 8 * (tdata % DAYS_PER_{time:s}), "
-                "where((tdata % DAYS_PER_{time:s}) > 0.875, 8 * (tdata % DAYS_PER_{time:s} - 0.875), 0))"
+                "where(((tdata / DAYS_PER_{time:s}) % 1) < 0.125, 1 - 8 * ((tdata / DAYS_PER_{time:s}) % 1), "
+                "where(((tdata / DAYS_PER_{time:s}) % 1) > 0.875, 8 * ((tdata / DAYS_PER_{time:s}) % 1 - 0.875), 0))"
             )
 
         if not part.is_modulation():
@@ -231,8 +231,8 @@ class PartForm(Enum):
             ]
         elif self == PartForm.GEOSTAT:
             main = (
-                "where((tdata % DAYS_PER_{time:s}) < 0.125, 1 - 8 * (tdata % DAYS_PER_{time:s}), "
-                "where((tdata % DAYS_PER_{time:s}) > 0.875, 8 * (tdata % DAYS_PER_{time:s} - 0.875), 0))"
+                "where(((tdata / DAYS_PER_{time:s}) % 1) < 0.125, 1 - 8 * ((tdata / DAYS_PER_{time:s}) % 1), "
+                "where(((tdata / DAYS_PER_{time:s}) % 1) > 0.875, 8 * ((tdata / DAYS_PER_{time:s}) % 1 - 0.875), 0))"
             )
             main_parts = []
 
