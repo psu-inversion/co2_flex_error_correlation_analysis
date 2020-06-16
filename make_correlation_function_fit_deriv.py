@@ -26,9 +26,9 @@ with open(OUT_FILE_NAME, "w") as out_file:
     out_file.write("""# cython: embedsignature=True
 # cython: language_level=3str
 # cython: cdivision=True
-# cython: wraparound=True
-# cython: boundscheck=True
-# cython: gdb_debug=True
+# cython: wraparound=False
+# cython: boundscheck=False
+# cython: gdb_debug=False
 from libc cimport math
 from cython.view cimport array as cvarray
 
