@@ -12,6 +12,9 @@ import pandas as pd
 import pint
 import xarray
 
+import statsmodels.formula.api as smf
+from statsmodels.stats.api import anova_lm
+
 import flux_correlation_function_fits
 from correlation_utils import get_autocorrelation_stats
 
@@ -119,10 +122,9 @@ for norm_name, norm_val in NORMALIZATIONS.items():
         normalized.coords["training_tower"] !=
         normalized.coords["validation_tower"]
     ).quantile(0.95)
-
     for sort_name, sort_key in SORT_KEYS.items():
         sorted_towers = sorted(normalized.coords["training_tower"].values, key=sort_key)
-        fig, axes = plt.subplots(5, 5, sharex=True, sharey=True, figsize=(6.5, 7))
+        fig, axes = plt.subplots(9, 6, sharex=True, sharey=True, figsize=(7.5, 9))
         for ax in axes.flat:
             ax.set_visible(False)
         for corr_fun, ax in zip(
@@ -140,7 +142,7 @@ for norm_name, norm_val in NORMALIZATIONS.items():
             ax.set_title(corr_fun.coords["correlation_function_short_name"].values)
         fig.subplots_adjust(hspace=0.4)
         cbar = fig.colorbar(
-            image, ax=axes[-1, 1:], orientation="horizontal", extend="both",
+            image, ax=axes[-1, -2:], orientation="horizontal", extend="both",
             fraction=1
         )
         cbar.set_label(
@@ -161,3 +163,27 @@ for norm_name, norm_val in NORMALIZATIONS.items():
             )
         )
         plt.close(fig)
+        out_of_sample = normalized.where(
+            normalized.coords["training_tower"] != normalized.coords["validation_tower"]
+        ).to_dataframe().dropna()
+        for_regression = out_of_sample.replace(
+            {"3-term cosine series": "Cos", "Exponential sine-squared": "Per",
+             "Geostatistical": "Geo"}
+        ).rename(
+            dict(daily_cycle="day", annual_cycle="ann", annual_modulation_of_daily_cycle="day_mod"),
+            axis=1
+        )
+        # formula = "cross_validation_error ~ has_daily_cycle + has_annual_cycle + (daily_cycle + annual_cycle + annual_modulation_of_daily_cycle) ** 2"
+        # model = smf.ols(formula,  out_of_sample)
+        formula0 = "cross_validation_error ~ (has_daily_cycle + has_annual_cycle) ** 2"
+        model0 = smf.ols(formula0, for_regression)
+        result0 = model0.fit()
+        formula1 = "cross_validation_error ~ (day + day_mod + ann) ** 1"
+        model1 = smf.ols(formula1, for_regression)
+        result1 = model1.fit()
+        formula2 = "cross_validation_error ~ (day + day_mod + ann) ** 2"
+        model2 = smf.ols(formula2, for_regression)
+        result2 = model2.fit()
+        print("Regression against the parts of the correlation models")
+        print(result1.summary())
+        print("ANOVA table against has_XXX_cycle\n", anova_lm(result0, result1))
