@@ -10,6 +10,7 @@ from __future__ import division, print_function, unicode_literals
 
 import datetime
 import itertools
+import random
 
 import numpy as np
 import scipy.optimize
@@ -45,6 +46,11 @@ HOURS_PER_YEAR = HOURS_PER_DAY * DAYS_PER_YEAR
 
 N_YEARS_DATA = 4
 REQUIRED_DATA_FRAC = 0.8
+
+N_SPLITS = 2
+N_TRAINING = 40
+N_HYPER_TRAIN = 20
+N_CROSS_VAL = 20  # or whatever's left
 
 UREG = pint.UnitRegistry()
 
@@ -326,17 +332,20 @@ for tower in SITES_TO_KEEP:
         continue
     AUTOCORRELATION_FOR_CURVE_FIT[tower] = corr_data
 
+LIST_OF_SITES = list(AUTOCORRELATION_FOR_CURVE_FIT)
+random.shuffle(LIST_OF_SITES)
+SITES_TO_FIT = LIST_OF_SITES[:N_TRAINING + N_HYPER_TRAIN]
+
 ############################################################
 # Set up dataset for results
 CROSS_TOWER_FIT_ERROR_DS = xarray.Dataset(
     {
         "cross_validation_error": (
-            ("correlation_function", "training_tower", "validation_tower"),
+            ("correlation_function", "splits"),
             np.full(
                 (
                     len(CORRELATION_PARTS_LIST),
-                    len(AUTOCORRELATION_FOR_CURVE_FIT),
-                    len(AUTOCORRELATION_FOR_CURVE_FIT),
+                    N_SPLITS,
                 ),
                 np.nan,
                 # I could probably get away with storing float16, but I
@@ -352,11 +361,11 @@ CROSS_TOWER_FIT_ERROR_DS = xarray.Dataset(
             },
         ),
         "optimized_parameters": (
-            ("correlation_function", "training_tower", "parameter_name"),
+            ("correlation_function", "splits", "parameter_name"),
             np.full(
                 (
                     len(CORRELATION_PARTS_LIST),
-                    len(AUTOCORRELATION_FOR_CURVE_FIT),
+                    N_SPLITS,
                     len(STARTING_PARAMS),
                 ),
                 np.nan,
@@ -370,7 +379,7 @@ CROSS_TOWER_FIT_ERROR_DS = xarray.Dataset(
                     "1",  #    daily_coef1 = .7,
                     "1",  #    daily_coef2 = .3,
                     "1",  #    daily_width = .5,
-                    "fortnights",  #    daily_timescale = 60,  # fortnights
+                    "fortnights",  #    daily_timescale = 60,
                     "1",  #    dm_width = .8,
                     "1",  #    dm_coef1 = .3,
                     "1",  #    dm_coef2 = +.1,
@@ -378,21 +387,21 @@ CROSS_TOWER_FIT_ERROR_DS = xarray.Dataset(
                     "1",  #    ann_coef2 = +.3,
                     "1",  #    ann_coef = 0.1,
                     "1",  #    ann_width = .3,
-                    "decades",  #    ann_timescale = 3.,  # decades
+                    "decades",  #    ann_timescale = 3.,
                     "1",  #    resid_coef = 0.05,
-                    "fortnights",  #    resid_timescale = 2.,  # fortnights
+                    "fortnights",  #    resid_timescale = 2.,
                     "1",  #    ec_coef = 0.7,
-                    "hours",  #    ec_timescale = 2.,  # hours
+                    "hours",  #    ec_timescale = 2.,
                 ],
             },
         ),
         "optimized_parameters_estimated_covariance_matrix": (
-            ("correlation_function", "training_tower",
+            ("correlation_function", "splits",
              "parameter_name_adjoint", "parameter_name"),
             np.full(
                 (
                     len(CORRELATION_PARTS_LIST),
-                    len(AUTOCORRELATION_FOR_CURVE_FIT),
+                    N_SPLITS,
                     len(STARTING_PARAMS),
                     len(STARTING_PARAMS),
                 ),
@@ -408,13 +417,25 @@ CROSS_TOWER_FIT_ERROR_DS = xarray.Dataset(
     },
 
     {
-        "training_tower": (
-            ("training_tower",),
-            sorted(AUTOCORRELATION_FOR_CURVE_FIT.keys()),
+        "splits": (
+            ("splits",),
+            np.arange(N_SPLITS, dtype=np.float32),
         ),
-        "validation_tower": (
-            ("validation_tower",),
-            sorted(AUTOCORRELATION_FOR_CURVE_FIT.keys()),
+        "training_towers": (
+            ("splits", "n_training"),
+            np.full(
+                (N_SPLITS, N_TRAINING),
+                "\0",
+                dtype="U6",
+            ),
+        ),
+        "validation_towers": (
+            ("splits", "n_validation"),
+            np.full(
+                (N_SPLITS, N_HYPER_TRAIN),
+                "\0",
+                dtype="U6",
+            ),
         ),
         "correlation_function": (
             ("correlation_function",),
@@ -439,22 +460,89 @@ CROSS_TOWER_FIT_ERROR_DS = xarray.Dataset(
         ),
         "has_daily_cycle": (
             ("correlation_function",),
-            np.array([forms[0] != PartForm.NONE for forms in CORRELATION_PARTS_LIST], dtype=bool),
+            np.array(
+                [forms[0] != PartForm.NONE
+                 for forms in CORRELATION_PARTS_LIST],
+                dtype=bool
+            ),
             {
                 "long_name": "has_daily_cycle",
                 "description":
-                    "whether the associated correlation function attempts to fit a "
-                    "daily cycle in the autocorrelations",
+                    "whether the associated correlation function attempts to "
+                    "fit a daily cycle in the autocorrelations",
+            },
+        ),
+        "daily_cycle_has_modulation": (
+            ("correlation_function",),
+            np.array(
+                [forms[1] != PartForm.NONE
+                 for forms in CORRELATION_PARTS_LIST],
+                dtype=bool,
+            ),
+            {
+                "long_name": "daily_cycle_has_modulation",
+                "description":
+                    "whether the associated correlation function attempts to "
+                    "fit an annual modulation of the daily cycle in the "
+                    "autocorrelations",
             },
         ),
         "has_annual_cycle": (
             ("correlation_function",),
-            np.array([forms[2] != PartForm.NONE for forms in CORRELATION_PARTS_LIST], dtype=bool),
+            np.array(
+                [forms[2] != PartForm.NONE
+                 for forms in CORRELATION_PARTS_LIST],
+                dtype=bool
+            ),
             {
                 "long_name": "has_annual_cycle",
                 "description":
-                    "whether the associated correlation function attempts to fit an "
-                    "annual cycle in the autocorrelations",
+                    "whether the associated correlation function attempts to "
+                    "fit an annual cycle in the autocorrelations",
+            }
+        ),
+        "daily_cycle_has_parameters": (
+            ("correlation_function",),
+            np.array(
+                [forms[0] != PartForm.NONE and forms[0] != PartForm.GEOSTAT
+                 for forms in CORRELATION_PARTS_LIST],
+                dtype=bool,
+            ),
+            {
+                "long_name": "daily_cycle_has_parameters",
+                "description":
+                    "whether the associated correlation function attempts to "
+                    "fit parameters for a daily cycle in the autocorrelations",
+            },
+        ),
+        "daily_cycle_modulation_has_parameters": (
+            ("correlation_function",),
+            np.array(
+                [forms[1] != PartForm.NONE and forms[1] != PartForm.GEOSTAT
+                 for forms in CORRELATION_PARTS_LIST],
+                dtype=bool,
+            ),
+            {
+                "long_name": "daily_cycle_modulation_has_parameters",
+                "description":
+                    "whether the associated correlation function attempts to "
+                    "fit parameters for an annual modulation of the daily "
+                    "cycle in the autocorrelations",
+            },
+        ),
+        "annual_cycle_has_parameters": (
+            ("correlation_function",),
+            np.array(
+                [forms[2] != PartForm.NONE and forms[2] != PartForm.GEOSTAT
+                 for forms in CORRELATION_PARTS_LIST],
+                dtype=bool
+            ),
+            {
+                "long_name": "annual_cycle_has_parameters",
+                "description":
+                    "whether the associated correlation function attempts to "
+                    "fit parameters for an annual cycle in the "
+                    "autocorrelations",
             }
         ),
         "daily_cycle": (
@@ -508,6 +596,7 @@ for combination in CORRELATION_PARTS_LIST:
         flux_correlation_function_fits,
         "{fun_name}_fit_ne".format(fun_name=func_short_name),
     )
+
     def curve_deriv(tdata, *params):
         """Find the derivative of the curve wrt. params.
 
@@ -540,13 +629,36 @@ for combination in CORRELATION_PARTS_LIST:
         "daily_{0.value:s}_daily_modulation_{1.value:s}_"
         "annual_{2.value:s}".format(*combination)
     )
-    for training_tower in AUTOCORRELATION_FOR_CURVE_FIT:
-        print("Now training on:", training_tower)
-        corr_data_train = AUTOCORRELATION_FOR_CURVE_FIT[training_tower]
+
+    for i in range(N_SPLITS):
+        random.shuffle(SITES_TO_FIT)
+        training_towers = np.array(sorted(SITES_TO_FIT[:N_TRAINING]))
+        validation_towers = np.array(sorted(SITES_TO_FIT[N_TRAINING:]))
+        CROSS_TOWER_FIT_ERROR_DS["training_towers"].sel(
+            splits=i
+        ).values[:] = training_towers
+        CROSS_TOWER_FIT_ERROR_DS["validation_towers"].sel(
+            splits=i
+        ).values[:] = validation_towers
+
+        print("Now training on:", training_towers)
+        corr_data_train = []
+        for training_tower in training_towers:
+            corr_data_train.append(
+                AUTOCORRELATION_FOR_CURVE_FIT[training_tower]
+            )
+
+        corr_data_train = xarray.concat(
+            corr_data_train, dim="site"
+        ).stack(
+            curve_list=["site", "time_lag"]
+        ).dropna("curve_list")
+
         acf_lags_train = timedelta_index_to_floats(
-            corr_data_train.indexes["time_lag"]
+            pd.TimedeltaIndex(corr_data_train.coords["time_lag"])
         )
         acf_weights_train = 1. / np.sqrt(corr_data_train["flux_error_n_pairs"])
+
         try:
             opt_params, param_cov = scipy.optimize.curve_fit(
                 curve_function,
@@ -589,36 +701,42 @@ for combination in CORRELATION_PARTS_LIST:
                 },
             )
         )
-        for validation_tower in AUTOCORRELATION_FOR_CURVE_FIT:
 
-            corr_data_validate = AUTOCORRELATION_FOR_CURVE_FIT[
+        corr_data_validate = []
+        for validation_tower in AUTOCORRELATION_FOR_CURVE_FIT:
+            corr_data_validate.append(AUTOCORRELATION_FOR_CURVE_FIT[
                 validation_tower
-            ]
-            acf_lags_validate = timedelta_index_to_floats(
-                corr_data_validate.indexes["time_lag"]
-            )
-            acf_weights_validate = 1. / np.sqrt(
-                corr_data_validate["flux_error_n_pairs"]
-            )
-            CROSS_TOWER_FIT_ERROR_DS["cross_validation_error"].sel(
-                correlation_function=(
-                    correlation_function_long_name
-                ),
-                training_tower=training_tower,
-                validation_tower=validation_tower,
-            ).values[()] = mismatch_function(
-                opt_params,
-                acf_lags_validate,
-                corr_data_validate["flux_error_autocorrelation"].astype(
-                    np.float32
-                ).values,
-                corr_data_validate["flux_error_n_pairs"].astype(
-                    np.float32
-                ).values
-            )
+            ])
+
+        corr_data_validate = xarray.concat(
+            corr_data_validate, dim="site",
+        ).stack(
+            curve_list=["site", "time_lag"]
+        ).dropna("curve_list")
+        acf_lags_validate = timedelta_index_to_floats(
+            pd.TimedeltaIndex(corr_data_validate.coords["time_lag"])
+        )
+        acf_weights_validate = 1. / np.sqrt(
+            corr_data_validate["flux_error_n_pairs"]
+        )
+        CROSS_TOWER_FIT_ERROR_DS["cross_validation_error"].sel(
+            correlation_function=(
+                correlation_function_long_name
+            ),
+            splits=i,
+        ).values[()] = mismatch_function(
+            opt_params,
+            acf_lags_validate,
+            corr_data_validate["flux_error_autocorrelation"].astype(
+                np.float32
+            ).values,
+            corr_data_validate["flux_error_n_pairs"].astype(
+                np.float32
+            ).values
+        )
 
 FUNCTION_PARAMS_AND_COV_DS = xarray.concat(
-    [xarray.concat(ds_list, dim="training_tower")
+    [xarray.concat(ds_list, dim="splits")
      for ds_list in FUNCTION_PARAMS_AND_COV],
     dim="correlation_function"
 )
@@ -631,256 +749,6 @@ encoding = {name: {"_FillValue": -9.999e9, "zlib": True}
 encoding.update({name: {"_FillValue": None}
                  for name in CROSS_TOWER_FIT_ERROR_DS.coords})
 CROSS_TOWER_FIT_ERROR_DS.to_netcdf(
-    "ameriflux-minus-casa-autocorrelation-function-fits.nc4",
+    "ameriflux-minus-casa-autocorrelation-function-multi-tower-fits.nc4",
     format="NETCDF4", encoding=encoding
 )
-
-############################################################
-# Define sort orders for plots
-SORT_KEYS = {
-    "alphabetical": lambda site: site,
-    "vegetation": lambda site: (
-        AMERIFLUX_MINUS_CASA_DATA["Vegetation"].sel(site=site).values[()],
-        site
-    ),
-    "climate class": lambda site: (
-        AMERIFLUX_MINUS_CASA_DATA["Climate_Cl"].sel(site=site).values[()],
-        site
-    ),
-    "latitude": lambda site: (
-        AMERIFLUX_MINUS_CASA_DATA["Latitude"].sel(site=site).values[()],
-        site
-    ),
-    "longitude": lambda site: (
-        AMERIFLUX_MINUS_CASA_DATA["Longitude"].sel(site=site).values[()],
-        site
-    ),
-    "mean temp": lambda site: (
-        AMERIFLUX_MINUS_CASA_DATA["Mean_Temp"].sel(site=site).values[()],
-        site
-    ),
-    "mean precip": lambda site: (
-        AMERIFLUX_MINUS_CASA_DATA["Mean_Preci"].sel(site=site).values[()],
-        site
-    ),
-}
-
-
-############################################################
-# Unnormalized plots, just the raw cross-validation error
-min_err = max(
-    CROSS_TOWER_FIT_ERROR_DS["cross_validation_error"].where(
-        CROSS_TOWER_FIT_ERROR_DS.coords["training_tower"] !=
-        CROSS_TOWER_FIT_ERROR_DS.coords["validation_tower"]
-    ).min(),
-    0
-)
-max_err = CROSS_TOWER_FIT_ERROR_DS["cross_validation_error"].where(
-    CROSS_TOWER_FIT_ERROR_DS.coords["training_tower"] !=
-    CROSS_TOWER_FIT_ERROR_DS.coords["validation_tower"]
-).quantile(0.95)
-
-for sort_name, sort_key in SORT_KEYS.items():
-    sorted_towers = sorted(AUTOCORRELATION_FOR_CURVE_FIT.keys(), key=sort_key)
-    fig, axes = plt.subplots(5, 5, sharex=True, sharey=True, figsize=(6.5, 7))
-    for ax in axes.flat:
-        ax.set_visible(False)
-    for corr_fun, ax in zip(
-            CROSS_TOWER_FIT_ERROR_DS.coords["correlation_function"], axes.flat
-    ):
-        ax.set_visible(True)
-        image = ax.imshow(
-            CROSS_TOWER_FIT_ERROR_DS["cross_validation_error"].sel(
-                correlation_function=corr_fun,
-                training_tower=sorted_towers,
-                validation_tower=sorted_towers,
-            ),
-            vmin=min_err, vmax=max_err
-        )
-        ax.set_title(corr_fun.coords["correlation_function_short_name"].values)
-    fig.subplots_adjust(hspace=0.4)
-    cbar = fig.colorbar(
-        image, ax=axes[-1, 1:], orientation="horizontal", extend="both",
-        fraction=1
-    )
-    cbar.set_label(
-        "Cross-Validation Error\n"
-        "Sort order: {name:s}".format(name=sort_name)
-    )
-    fig.savefig(
-        "tower-cross-validation-raw-mismatch-sort-{name:s}.png"
-        .format(name=sort_name.replace(" ", "-"))
-    )
-    plt.close(fig)
-
-############################################################
-# Plots normalized by the number of pairs going into the autocorrelations
-TOTAL_N_PAIRS = (
-    AUTOCORRELATION_DATA["flux_error_n_pairs"]
-    .sum("time_lag")
-    .rename(site="validation_tower")
-)
-PAIRS_NORMALIZED_CV_ERR = (
-    CROSS_TOWER_FIT_ERROR_DS["cross_validation_error"] /
-    TOTAL_N_PAIRS
-)
-
-pairs_min_err = max(
-    PAIRS_NORMALIZED_CV_ERR.where(
-        PAIRS_NORMALIZED_CV_ERR.coords["training_tower"] !=
-        PAIRS_NORMALIZED_CV_ERR.coords["validation_tower"]
-    ).min(),
-    0
-)
-pairs_max_err = PAIRS_NORMALIZED_CV_ERR.where(
-    PAIRS_NORMALIZED_CV_ERR.coords["training_tower"] !=
-    PAIRS_NORMALIZED_CV_ERR.coords["validation_tower"]
-).quantile(0.95)
-
-
-for sort_name, sort_key in SORT_KEYS.items():
-    sorted_towers = sorted(AUTOCORRELATION_FOR_CURVE_FIT.keys(), key=sort_key)
-    fig, axes = plt.subplots(5, 5, sharex=True, sharey=True, figsize=(6.5, 7))
-    for ax in axes.flat:
-        ax.set_visible(False)
-    for corr_fun, ax in zip(
-            PAIRS_NORMALIZED_CV_ERR.coords["correlation_function"], axes.flat
-    ):
-        ax.set_visible(True)
-        image = ax.imshow(
-            PAIRS_NORMALIZED_CV_ERR.sel(
-                correlation_function=corr_fun,
-                training_tower=sorted_towers,
-                validation_tower=sorted_towers,
-            ),
-            vmin=pairs_min_err, vmax=pairs_max_err
-        )
-        ax.set_title(corr_fun.coords["correlation_function_short_name"].values)
-    fig.subplots_adjust(hspace=0.4)
-    cbar = fig.colorbar(
-        image, ax=axes[-1, 1:], orientation="horizontal", extend="both",
-        fraction=1
-    )
-    cbar.set_label(
-        "Cross-validation error normalized by number of pairs\n"
-        "Sort order: {name:s}".format(name=sort_name)
-    )
-    fig.savefig(
-        "tower-cross-validation-pairs-normalized-mismatch-sort-{name:s}.png"
-        .format(name=sort_name.replace(" ", "-"))
-    )
-    plt.close(fig)
-
-############################################################
-# Plots normalized by the number of differences going into the autocorrelations
-N_DIFFERENCES = AMERIFLUX_MINUS_CASA_DATA["flux_difference"].count(
-    "time"
-).rename(site="validation_tower").load()
-
-DIFFERENCES_NORMALIZED_CV_ERR = (
-    CROSS_TOWER_FIT_ERROR_DS["cross_validation_error"] /
-    N_DIFFERENCES
-)
-
-differences_min_err = max(
-    DIFFERENCES_NORMALIZED_CV_ERR.where(
-        DIFFERENCES_NORMALIZED_CV_ERR.coords["training_tower"] !=
-        DIFFERENCES_NORMALIZED_CV_ERR.coords["validation_tower"]
-    ).min(),
-    0
-)
-differences_max_err = DIFFERENCES_NORMALIZED_CV_ERR.where(
-    DIFFERENCES_NORMALIZED_CV_ERR.coords["training_tower"] !=
-    DIFFERENCES_NORMALIZED_CV_ERR.coords["validation_tower"]
-).quantile(0.95)
-
-for sort_name, sort_key in SORT_KEYS.items():
-    sorted_towers = sorted(AUTOCORRELATION_FOR_CURVE_FIT.keys(), key=sort_key)
-    fig, axes = plt.subplots(5, 5, sharex=True, sharey=True, figsize=(6.5, 7))
-    for ax in axes.flat:
-        ax.set_visible(False)
-    for corr_fun, ax in zip(
-            DIFFERENCES_NORMALIZED_CV_ERR.coords["correlation_function"],
-            axes.flat
-    ):
-        ax.set_visible(True)
-        image = ax.imshow(
-            DIFFERENCES_NORMALIZED_CV_ERR.sel(
-                correlation_function=corr_fun,
-                training_tower=sorted_towers,
-                validation_tower=sorted_towers,
-            ),
-            vmin=differences_min_err, vmax=differences_max_err
-        )
-        ax.set_title(corr_fun.coords["correlation_function_short_name"].values)
-    fig.subplots_adjust(hspace=0.4)
-    cbar = fig.colorbar(
-        image, ax=axes[-1, 1:], orientation="horizontal", extend="both",
-        fraction=1
-    )
-    cbar.set_label(
-        "Cross-validation error over number of differences\n"
-        "Sort order: {name:s}".format(name=sort_name)
-    )
-    fig.savefig(
-        "tower-cross-validation-differences-normalized-mismatch-"
-        "sort-{name:s}.png"
-        .format(name=sort_name.replace(" ", "-"))
-    )
-    plt.close(fig)
-
-############################################################
-# Plots normalized by the mean CV error for each validation tower
-MEAN_CV_ERR = CROSS_TOWER_FIT_ERROR_DS["cross_validation_error"].mean(
-    ("correlation_function", "training_tower")
-)
-
-MEAN_NORMALIZED_CV_ERR = (
-    CROSS_TOWER_FIT_ERROR_DS["cross_validation_error"] /
-    MEAN_CV_ERR
-)
-
-mean_min_err = max(
-    MEAN_NORMALIZED_CV_ERR.where(
-        MEAN_NORMALIZED_CV_ERR.coords["training_tower"] !=
-        MEAN_NORMALIZED_CV_ERR.coords["validation_tower"]
-    ).min(),
-    0
-)
-mean_max_err = MEAN_NORMALIZED_CV_ERR.where(
-    MEAN_NORMALIZED_CV_ERR.coords["training_tower"] !=
-    MEAN_NORMALIZED_CV_ERR.coords["validation_tower"]
-).quantile(0.95)
-
-for sort_name, sort_key in SORT_KEYS.items():
-    sorted_towers = sorted(AUTOCORRELATION_FOR_CURVE_FIT.keys(), key=sort_key)
-    fig, axes = plt.subplots(5, 5, sharex=True, sharey=True, figsize=(6.5, 7))
-    for ax in axes.flat:
-        ax.set_visible(False)
-    for corr_fun, ax in zip(
-            MEAN_NORMALIZED_CV_ERR.coords["correlation_function"], axes.flat
-    ):
-        ax.set_visible(True)
-        image = ax.imshow(
-            MEAN_NORMALIZED_CV_ERR.sel(
-                correlation_function=corr_fun,
-                training_tower=sorted_towers,
-                validation_tower=sorted_towers,
-            ),
-            vmin=mean_min_err, vmax=mean_max_err
-        )
-        ax.set_title(corr_fun.coords["correlation_function_short_name"].values)
-    fig.subplots_adjust(hspace=0.4)
-    cbar = fig.colorbar(
-        image, ax=axes[-1, 1:], orientation="horizontal", extend="both",
-        fraction=1
-    )
-    cbar.set_label(
-        "Cross-validation error over validation-tower mean\n"
-        "Sort order: {name:s}".format(name=sort_name)
-    )
-    fig.savefig(
-        "tower-cross-validation-mean-normalized-mismatch-sort-{name:s}.png"
-        .format(name=sort_name.replace(" ", "-"))
-    )
-    plt.close(fig)
