@@ -111,23 +111,23 @@ def timedelta_index_to_floats(index):
 ############################################################
 # Set initial values and bounds for the parameters
 STARTING_PARAMS = dict(
-    daily_coef = 0.2,
+    daily_coef = 0.5,
     daily_coef1 = .7,
     daily_coef2 = .3,
     daily_width = .5,
-    daily_timescale = 60,  # fortnights
+    daily_timescale = 500,  # fortnights
     dm_width = .8,
     dm_coef1 = .3,
     dm_coef2 = +.1,
-    ann_coef1 = +.4,
-    ann_coef2 = +.3,
-    ann_coef = 0.1,
-    ann_width = .3,
+    ann_coef1 = +.8,
+    ann_coef2 = +.4,
+    ann_coef = 0.03,
+    ann_width = .6,
     ann_timescale = 3.,  # decades
-    resid_coef = 0.05,
+    resid_coef = 0.03,
     resid_timescale = 2.,  # fortnights
-    ec_coef = 0.7,
-    ec_timescale = 2.,  # hours
+    ec_coef = 0.5,
+    ec_timescale = 3.,  # hours
 )
 PARAM_LOWER_BOUNDS = dict(
     daily_coef = -10,
