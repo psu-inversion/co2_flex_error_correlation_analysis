@@ -572,92 +572,112 @@ CROSS_TOWER_FIT_ERROR_DS = xarray.Dataset(
 # Actually do the cross-validation
 FUNCTION_PARAMS_AND_COV = []
 
-for combination in CORRELATION_PARTS_LIST:
-    print(combination)
-    # Get function to optimize
-    func_short_name = "_".join([
-        "{0:s}{1:s}".format(
-            part.get_short_name(),
-            form.get_short_name(),
+for i in range(N_SPLITS):
+    random.shuffle(SITES_TO_FIT)
+    training_towers = np.array(sorted(SITES_TO_FIT[:N_TRAINING]))
+    validation_towers = np.array(sorted(SITES_TO_FIT[N_TRAINING:]))
+    CROSS_TOWER_FIT_ERROR_DS["training_towers"].sel(
+        splits=i
+    ).values[:] = training_towers
+    CROSS_TOWER_FIT_ERROR_DS["validation_towers"].sel(
+        splits=i
+    ).values[:] = validation_towers
+
+    print("Now training on:", training_towers)
+    corr_data_train = []
+    for training_tower in training_towers:
+        corr_data_train.append(
+            AUTOCORRELATION_FOR_CURVE_FIT[training_tower]
         )
-        for part, form in zip(CorrelationPart, combination)
-    ])
-    curve_function = getattr(
-        flux_correlation_function_fits,
-        "{fun_name:s}_curve_ne".format(
-            fun_name=func_short_name
-        )
+
+    corr_data_train = xarray.concat(
+        corr_data_train, dim="site"
+    ).stack(
+        curve_list=["site", "time_lag"]
+    ).dropna("curve_list")
+
+    acf_lags_train = timedelta_index_to_floats(
+        pd.TimedeltaIndex(corr_data_train.coords["time_lag"])
     )
-    curve_and_derivative_function = getattr(
-        flux_correlation_function_fits,
-        "{fun_name:s}_curve_loop".format(fun_name=func_short_name),
+    acf_weights_train = 1. / np.sqrt(corr_data_train["flux_error_n_pairs"])
+
+    # Set up validation data as well
+    corr_data_validate = []
+    for validation_tower in AUTOCORRELATION_FOR_CURVE_FIT:
+        corr_data_validate.append(AUTOCORRELATION_FOR_CURVE_FIT[
+            validation_tower
+        ])
+
+    corr_data_validate = xarray.concat(
+        corr_data_validate, dim="site",
+    ).stack(
+        curve_list=["site", "time_lag"]
+    ).dropna("curve_list")
+    acf_lags_validate = timedelta_index_to_floats(
+        pd.TimedeltaIndex(corr_data_validate.coords["time_lag"])
     )
-    mismatch_function = getattr(
-        flux_correlation_function_fits,
-        "{fun_name}_fit_ne".format(fun_name=func_short_name),
+    acf_weights_validate = 1. / np.sqrt(
+        corr_data_validate["flux_error_n_pairs"]
     )
 
-    def curve_deriv(tdata, *params):
-        """Find the derivative of the curve wrt. params.
-
-        Parameters
-        ----------
-        tdata: np.ndarray[N]
-        params: np.ndarray[M]
-
-        Returns
-        -------
-        deriv: np.ndarray[N, M]
-        """
-        return curve_and_derivative_function(tdata, *params)[1]
-    # Set up parameters
-    parameter_list = get_full_parameter_list(*combination)
-    starting_params = np.array(
-        [STARTING_PARAMS[param] for param in parameter_list],
-        dtype=np.float32,
-    )
-    lower_bounds = np.array(
-        [PARAM_LOWER_BOUNDS[param] for param in parameter_list],
-        dtype=np.float32,
-    )
-    upper_bounds = np.array(
-        [PARAM_UPPER_BOUNDS[param] for param in parameter_list],
-        dtype=np.float32,
-    )
     FUNCTION_PARAMS_AND_COV.append([])
-    correlation_function_long_name = (
-        "daily_{0.value:s}_daily_modulation_{1.value:s}_"
-        "annual_{2.value:s}".format(*combination)
-    )
 
-    for i in range(N_SPLITS):
-        random.shuffle(SITES_TO_FIT)
-        training_towers = np.array(sorted(SITES_TO_FIT[:N_TRAINING]))
-        validation_towers = np.array(sorted(SITES_TO_FIT[N_TRAINING:]))
-        CROSS_TOWER_FIT_ERROR_DS["training_towers"].sel(
-            splits=i
-        ).values[:] = training_towers
-        CROSS_TOWER_FIT_ERROR_DS["validation_towers"].sel(
-            splits=i
-        ).values[:] = validation_towers
-
-        print("Now training on:", training_towers)
-        corr_data_train = []
-        for training_tower in training_towers:
-            corr_data_train.append(
-                AUTOCORRELATION_FOR_CURVE_FIT[training_tower]
+    for combination in CORRELATION_PARTS_LIST:
+        print(combination)
+        # Get function to optimize
+        func_short_name = "_".join([
+            "{0:s}{1:s}".format(
+                part.get_short_name(),
+                form.get_short_name(),
             )
-
-        corr_data_train = xarray.concat(
-            corr_data_train, dim="site"
-        ).stack(
-            curve_list=["site", "time_lag"]
-        ).dropna("curve_list")
-
-        acf_lags_train = timedelta_index_to_floats(
-            pd.TimedeltaIndex(corr_data_train.coords["time_lag"])
+            for part, form in zip(CorrelationPart, combination)
+        ])
+        curve_function = getattr(
+            flux_correlation_function_fits,
+            "{fun_name:s}_curve_ne".format(
+                fun_name=func_short_name
+            )
         )
-        acf_weights_train = 1. / np.sqrt(corr_data_train["flux_error_n_pairs"])
+        curve_and_derivative_function = getattr(
+            flux_correlation_function_fits,
+            "{fun_name:s}_curve_loop".format(fun_name=func_short_name),
+        )
+        mismatch_function = getattr(
+            flux_correlation_function_fits,
+            "{fun_name}_fit_ne".format(fun_name=func_short_name),
+        )
+
+        def curve_deriv(tdata, *params):
+            """Find the derivative of the curve wrt. params.
+
+            Parameters
+            ----------
+            tdata: np.ndarray[N]
+            params: np.ndarray[M]
+
+            Returns
+            -------
+            deriv: np.ndarray[N, M]
+            """
+            return curve_and_derivative_function(tdata, *params)[1]
+        # Set up parameters
+        parameter_list = get_full_parameter_list(*combination)
+        starting_params = np.array(
+            [STARTING_PARAMS[param] for param in parameter_list],
+            dtype=np.float32,
+        )
+        lower_bounds = np.array(
+            [PARAM_LOWER_BOUNDS[param] for param in parameter_list],
+            dtype=np.float32,
+        )
+        upper_bounds = np.array(
+            [PARAM_UPPER_BOUNDS[param] for param in parameter_list],
+            dtype=np.float32,
+        )
+        correlation_function_long_name = (
+            "daily_{0.value:s}_daily_modulation_{1.value:s}_"
+            "annual_{2.value:s}".format(*combination)
+        )
 
         try:
             opt_params, param_cov = scipy.optimize.curve_fit(
@@ -677,6 +697,7 @@ for combination in CORRELATION_PARTS_LIST:
         except (RuntimeError, ValueError) as err:
             print(err, "Curve fit failed, next tower", sep="\n")
             continue
+
         FUNCTION_PARAMS_AND_COV[-1].append(
             xarray.Dataset(
                 {
@@ -694,31 +715,17 @@ for combination in CORRELATION_PARTS_LIST:
                     "parameter_name_adjoint": (
                         ("parameter_name_adjoint",), parameter_list
                     ),
-                    "training_tower": ((), training_tower),
+                    "training_towers": (("training_towers",), training_towers),
                     "correlation_function": (
                         (), correlation_function_long_name
+                    ),
+                    "splits": (
+                        (), i
                     ),
                 },
             )
         )
 
-        corr_data_validate = []
-        for validation_tower in AUTOCORRELATION_FOR_CURVE_FIT:
-            corr_data_validate.append(AUTOCORRELATION_FOR_CURVE_FIT[
-                validation_tower
-            ])
-
-        corr_data_validate = xarray.concat(
-            corr_data_validate, dim="site",
-        ).stack(
-            curve_list=["site", "time_lag"]
-        ).dropna("curve_list")
-        acf_lags_validate = timedelta_index_to_floats(
-            pd.TimedeltaIndex(corr_data_validate.coords["time_lag"])
-        )
-        acf_weights_validate = 1. / np.sqrt(
-            corr_data_validate["flux_error_n_pairs"]
-        )
         CROSS_TOWER_FIT_ERROR_DS["cross_validation_error"].sel(
             correlation_function=(
                 correlation_function_long_name
@@ -736,9 +743,9 @@ for combination in CORRELATION_PARTS_LIST:
         )
 
 FUNCTION_PARAMS_AND_COV_DS = xarray.concat(
-    [xarray.concat(ds_list, dim="splits")
+    [xarray.concat(ds_list, dim="correlation_function")
      for ds_list in FUNCTION_PARAMS_AND_COV],
-    dim="correlation_function"
+    dim="splits"
 )
 CROSS_TOWER_FIT_ERROR_DS = CROSS_TOWER_FIT_ERROR_DS.update(
     FUNCTION_PARAMS_AND_COV_DS
