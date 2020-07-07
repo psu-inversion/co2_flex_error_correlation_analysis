@@ -17,6 +17,8 @@
 *.dll
 *.c
 *.cpp
+flux_correlation_function*.html
+cython_debug
 # Programatically generated
 flux_correlation_function*.py*
 
