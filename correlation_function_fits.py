@@ -40,7 +40,7 @@ GLOBAL_DICT = dict(
     FOUR_PI_OVER_YEAR=4 * pi / DAYS_PER_YEAR,
 )
 
-TOPK = 7
+TOPK = 5
 
 
 class CorrelationPart(Enum):
