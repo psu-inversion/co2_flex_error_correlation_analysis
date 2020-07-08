@@ -14,7 +14,6 @@ import random
 
 import numpy as np
 import scipy.optimize
-import matplotlib.pyplot as plt
 import pandas as pd
 import pint
 import xarray
@@ -27,6 +26,8 @@ from correlation_function_fits import (
     is_valid_combination,
     get_full_parameter_list,
 )
+
+print(datetime.datetime.now())
 
 CORRELATION_PARTS_LIST = [
     (day_part, dm_part, ann_part)
@@ -599,6 +600,7 @@ CROSS_TOWER_FIT_ERROR_DS = xarray.Dataset(
 ############################################################
 # Actually do the cross-validation
 FUNCTION_PARAMS_AND_COV = []
+print(datetime.datetime.now())
 
 for i in range(N_SPLITS):
     random.shuffle(SITES_TO_FIT)
@@ -742,6 +744,7 @@ for i in range(N_SPLITS):
                 np.float32
             ).values
         )
+        print(datetime.datetime.now())
 
 FUNCTION_PARAMS_AND_COV_DS = xarray.concat(
     [xarray.concat(ds_list, dim="correlation_function")
@@ -757,6 +760,7 @@ encoding = {name: {"_FillValue": -9.999e9, "zlib": True}
 encoding.update({name: {"_FillValue": None}
                  for name in CROSS_TOWER_FIT_ERROR_DS.coords})
 CROSS_TOWER_FIT_ERROR_DS.to_netcdf(
-    "ameriflux-minus-casa-autocorrelation-function-multi-tower-fits.nc4",
+    "ameriflux-minus-casa-autocorrelation-function-multi-tower-fits"
+    "-20splits-run1.nc4",
     format="NETCDF4", encoding=encoding
 )
