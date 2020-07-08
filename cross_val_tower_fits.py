@@ -126,14 +126,23 @@ def select_tower_subset(corr_data, towers):
 
     corr_data_towers = corr_data.sel(site=towers)
 
-    corr_data = corr_data_towers.stack(
-        curve_list=["site", "time_lag"]
-    ).dropna("curve_list")
+    n_pairs = corr_data_towers[
+        "flux_error_n_pairs"
+    ]
+    n_pairs_tot = n_pairs.sum("site")
+    # 0.15.1 introduces a weighted() method that does the same thing,
+    # but it's only three and a half months old so far.
+    corr_data = (
+        corr_data_towers * n_pairs
+    ).sum(dim="site") / n_pairs_tot
+    corr_data["flux_error_n_pairs"] = n_pairs_tot
+    corr_data.dropna("time_lag")
 
     acf_lags = timedelta_index_to_floats(
         pd.TimedeltaIndex(corr_data.coords["time_lag"])
     )
-    acf_weights = 1. / np.sqrt(corr_data["flux_error_n_pairs"])
+    acf_weights = 1. / np.sqrt(n_pairs_tot)
+
     return corr_data, acf_lags, acf_weights
 
 
