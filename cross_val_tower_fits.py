@@ -10,6 +10,7 @@ from __future__ import division, print_function, unicode_literals
 
 import datetime
 import itertools
+import logging
 import random
 
 import numpy as np
@@ -55,6 +56,16 @@ N_CROSS_VAL = 20  # or whatever's left
 
 UREG = pint.UnitRegistry()
 
+# Configure logging
+logging.basicConfig(
+    format=(
+        "%(asctime)s:%(levelname)7s:%(name)15s:"
+        "%(module)20s:%(funcName)25s:%(lineno)03s: %(message)s"
+    ),
+    level=logging.DEBUG,
+)
+_LOGGER = logging.getLogger(__name__)
+
 
 def has_enough_data(da):
     """Check whether there is enough data for a good analysis.
@@ -74,18 +85,18 @@ def has_enough_data(da):
     ][0]
     time_index = da.indexes[time_index_name]
     if len(time_index) < 1:
-        print("No data")
+        _LOGGER.debug("No data")
         return False
     if time_index[-1] - time_index[0] < datetime.timedelta(
             days=N_YEARS_DATA * DAYS_PER_YEAR
     ):
-        print("< 2 years")
+        _LOGGER.debug("< 2 years")
         return False
     if (
             da.count(time_index_name).values[()] <
             REQUIRED_DATA_FRAC * N_YEARS_DATA * HOURS_PER_YEAR
     ):
-        print("Missing data")
+        _LOGGER.debug("Missing data")
         return False
     return True
 
@@ -609,7 +620,7 @@ CROSS_TOWER_FIT_ERROR_DS = xarray.Dataset(
 ############################################################
 # Actually do the cross-validation
 FUNCTION_PARAMS_AND_COV = []
-print(datetime.datetime.now())
+_LOGGER.info("Starting cross-validation")
 
 for i in range(N_SPLITS):
     random.shuffle(SITES_TO_FIT)
@@ -622,7 +633,7 @@ for i in range(N_SPLITS):
         splits=i
     ).values[:] = validation_towers
 
-    print("Now training on:", training_towers)
+    _LOGGER.info("Split %3d: Training towers: %s", i, training_towers)
     corr_data_train, acf_lags_train, acf_weights_train = select_tower_subset(
         AUTOCORRELATION_DATA, training_towers
     )
@@ -635,7 +646,7 @@ for i in range(N_SPLITS):
     FUNCTION_PARAMS_AND_COV.append([])
 
     for combination in CORRELATION_PARTS_LIST:
-        print(combination)
+        _LOGGER.info("Fitting function: %s", combination)
         # Get function to optimize
         func_short_name = "_".join([
             "{0:s}{1:s}".format(
@@ -707,7 +718,8 @@ for i in range(N_SPLITS):
                 jac=curve_deriv,
             )
         except (RuntimeError, ValueError) as err:
-            print(err, "Curve fit failed, next tower", sep="\n")
+            _LOGGER.error("Curve fit failed, next split")
+            _LOGGER.exception(err)
             continue
 
         FUNCTION_PARAMS_AND_COV[-1].append(
@@ -753,7 +765,8 @@ for i in range(N_SPLITS):
                 np.float32
             ).values
         )
-        print(datetime.datetime.now())
+        _LOGGER.info("Done fit and cross-validation")
+    _LOGGER.info("Done cross-validation loop %d", i)
 
 FUNCTION_PARAMS_AND_COV_DS = xarray.concat(
     [xarray.concat(ds_list, dim="correlation_function")
@@ -773,3 +786,4 @@ CROSS_TOWER_FIT_ERROR_DS.to_netcdf(
     "-20splits-run1.nc4",
     format="NETCDF4", encoding=encoding
 )
+_LOGGER.info("Saved output")
