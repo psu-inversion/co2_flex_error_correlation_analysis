@@ -108,6 +108,34 @@ def timedelta_index_to_floats(index):
     return lag_times.astype(np.float32)
 
 
+def select_tower_subset(corr_data, towers):
+    """Combine tower autocorr data to make single series
+
+    Parameters
+    ----------
+    corr_data: xarray.Dataset
+    towers: List[str]
+
+    Returns
+    -------
+    corr_data: xarray.Dataset
+    acf_lags: np.ndarray
+    acf_weights: np.ndarray
+    """
+
+    corr_data_towers = corr_data.sel(site=towers)
+
+    corr_data = corr_data_towers.stack(
+        curve_list=["site", "time_lag"]
+    ).dropna("curve_list")
+
+    acf_lags = timedelta_index_to_floats(
+        pd.TimedeltaIndex(corr_data.coords["time_lag"])
+    )
+    acf_weights = 1. / np.sqrt(corr_data["flux_error_n_pairs"])
+    return corr_data, acf_lags, acf_weights
+
+
 ############################################################
 # Set initial values and bounds for the parameters
 STARTING_PARAMS = dict(
@@ -584,40 +612,13 @@ for i in range(N_SPLITS):
     ).values[:] = validation_towers
 
     print("Now training on:", training_towers)
-    corr_data_train = []
-    for training_tower in training_towers:
-        corr_data_train.append(
-            AUTOCORRELATION_FOR_CURVE_FIT[training_tower]
-        )
-
-    corr_data_train = xarray.concat(
-        corr_data_train, dim="site"
-    ).stack(
-        curve_list=["site", "time_lag"]
-    ).dropna("curve_list")
-
-    acf_lags_train = timedelta_index_to_floats(
-        pd.TimedeltaIndex(corr_data_train.coords["time_lag"])
+    corr_data_train, acf_lags_train, acf_weights_train = select_tower_subset(
+        AUTOCORRELATION_DATA, training_towers
     )
-    acf_weights_train = 1. / np.sqrt(corr_data_train["flux_error_n_pairs"])
 
     # Set up validation data as well
-    corr_data_validate = []
-    for validation_tower in AUTOCORRELATION_FOR_CURVE_FIT:
-        corr_data_validate.append(AUTOCORRELATION_FOR_CURVE_FIT[
-            validation_tower
-        ])
-
-    corr_data_validate = xarray.concat(
-        corr_data_validate, dim="site",
-    ).stack(
-        curve_list=["site", "time_lag"]
-    ).dropna("curve_list")
-    acf_lags_validate = timedelta_index_to_floats(
-        pd.TimedeltaIndex(corr_data_validate.coords["time_lag"])
-    )
-    acf_weights_validate = 1. / np.sqrt(
-        corr_data_validate["flux_error_n_pairs"]
+    corr_data_validate, acf_lags_validate, acf_weights_validate = (
+        select_tower_subset(AUTOCORRELATION_DATA, validation_towers)
     )
 
     FUNCTION_PARAMS_AND_COV.append([])
