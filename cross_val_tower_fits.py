@@ -49,10 +49,10 @@ HOURS_PER_YEAR = HOURS_PER_DAY * DAYS_PER_YEAR
 N_YEARS_DATA = 4
 REQUIRED_DATA_FRAC = 0.8
 
-N_SPLITS = 2
-N_TRAINING = 40
-N_HYPER_TRAIN = 20
-N_CROSS_VAL = 20  # or whatever's left
+N_SPLITS = 200
+N_TRAINING = 50
+N_HYPER_TRAIN = 30
+N_CROSS_VAL = 0  # or whatever's left
 
 UREG = pint.UnitRegistry()
 
@@ -783,7 +783,7 @@ encoding.update({name: {"_FillValue": None}
                  for name in CROSS_TOWER_FIT_ERROR_DS.coords})
 CROSS_TOWER_FIT_ERROR_DS.to_netcdf(
     "ameriflux-minus-casa-autocorrelation-function-multi-tower-fits"
-    "-20splits-run1.nc4",
+    "-200splits-run1.nc4",
     format="NETCDF4", encoding=encoding
 )
 _LOGGER.info("Saved output")
