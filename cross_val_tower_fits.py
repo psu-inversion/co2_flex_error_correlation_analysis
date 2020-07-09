@@ -50,7 +50,8 @@ N_YEARS_DATA = 4
 REQUIRED_DATA_FRAC = 0.8
 
 N_SPLITS = 200
-N_TRAINING = 50
+# There are 75 towers that fit my criteria
+N_TRAINING = 45
 N_HYPER_TRAIN = 30
 N_CROSS_VAL = 0  # or whatever's left
 
@@ -140,6 +141,9 @@ def select_tower_subset(corr_data, towers):
     n_pairs = corr_data_towers[
         "flux_error_n_pairs"
     ]
+    # # Make sure elements with no data are zero
+    # # This should help prevent nans cropping up
+    # corr_data_towers = corr_data_towers.where(n_pairs >= 1, 0)
     n_pairs_tot = n_pairs.sum("site")
     # 0.15.1 introduces a weighted() method that does the same thing,
     # but it's only three and a half months old so far.
@@ -147,12 +151,13 @@ def select_tower_subset(corr_data, towers):
         corr_data_towers * n_pairs
     ).sum(dim="site") / n_pairs_tot
     corr_data["flux_error_n_pairs"] = n_pairs_tot
-    corr_data.dropna("time_lag")
+    corr_data = corr_data.dropna("time_lag")
 
     acf_lags = timedelta_index_to_floats(
         pd.TimedeltaIndex(corr_data.coords["time_lag"])
     )
     acf_weights = 1. / np.sqrt(n_pairs_tot)
+    assert np.isfinite(acf_weights).all()
 
     return corr_data, acf_lags, acf_weights
 
@@ -630,10 +635,11 @@ for i in range(N_SPLITS):
         splits=i
     ).values[:] = training_towers
     CROSS_TOWER_FIT_ERROR_DS["validation_towers"].sel(
-        splits=i
+        splits=i,
+        n_validation=slice(None, len(validation_towers)),
     ).values[:] = validation_towers
 
-    _LOGGER.info("Split %3d: Training towers: %s", i, training_towers)
+    _LOGGER.info("Split %3d: Training towers:\n%s", i, training_towers)
     corr_data_train, acf_lags_train, acf_weights_train = select_tower_subset(
         AUTOCORRELATION_DATA, training_towers
     )
@@ -720,6 +726,15 @@ for i in range(N_SPLITS):
         except (RuntimeError, ValueError) as err:
             _LOGGER.error("Curve fit failed, next split")
             _LOGGER.exception(err)
+            _LOGGER.debug("Lower bounds:\n%s", lower_bounds.astype(np.float32))
+            _LOGGER.debug("Upper bounds:\n%s", upper_bounds.astype(np.float32))
+            _LOGGER.debug("Starting params:\n%s", starting_params.astype(np.float32))
+            _LOGGER.debug("ACF weights:\n%s", acf_weights_train.astype(np.float32))
+            _LOGGER.debug("ACF lags:\n%s", acf_lags_train.astype(np.float32))
+            _LOGGER.debug(
+                "Corr data:\n%s",
+                corr_data_train["flux_error_autocorrelation"].astype(np.float32).values
+            )
             continue
 
         FUNCTION_PARAMS_AND_COV[-1].append(
