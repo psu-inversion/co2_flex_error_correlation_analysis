@@ -60,8 +60,8 @@ UREG = pint.UnitRegistry()
 # Configure logging
 logging.basicConfig(
     format=(
-        "%(asctime)s:%(levelname)7s:%(name)15s:"
-        "%(module)20s:%(funcName)25s:%(lineno)03s: %(message)s"
+        "%(asctime)s:%(levelname)7s:%(name)8s:"
+        "%(module)20s:%(funcName)15s:%(lineno)03s: %(message)s"
     ),
     level=logging.DEBUG,
 )
