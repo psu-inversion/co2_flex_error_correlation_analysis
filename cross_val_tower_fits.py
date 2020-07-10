@@ -135,14 +135,13 @@ def select_tower_subset(corr_data, towers):
     acf_lags: np.ndarray
     acf_weights: np.ndarray
     """
-
     corr_data_towers = corr_data.sel(site=towers)
 
     n_pairs = corr_data_towers[
         "flux_error_n_pairs"
     ]
     # # Make sure elements with no data are zero
-    # # This should help prevent nans cropping up
+    # # All data should already be zero.
     # corr_data_towers = corr_data_towers.where(n_pairs >= 1, 0)
     n_pairs_tot = n_pairs.sum("site")
     # 0.15.1 introduces a weighted() method that does the same thing,
@@ -151,12 +150,14 @@ def select_tower_subset(corr_data, towers):
         corr_data_towers * n_pairs
     ).sum(dim="site") / n_pairs_tot
     corr_data["flux_error_n_pairs"] = n_pairs_tot
-    corr_data = corr_data.dropna("time_lag")
+    corr_data = corr_data.sel(
+        time_lag=n_pairs_tot >= 1,
+    ).dropna("time_lag")
 
     acf_lags = timedelta_index_to_floats(
         pd.TimedeltaIndex(corr_data.coords["time_lag"])
     )
-    acf_weights = 1. / np.sqrt(n_pairs_tot)
+    acf_weights = 1. / np.sqrt(corr_data["flux_error_n_pairs"])
     assert np.isfinite(acf_weights).all()
 
     return corr_data, acf_lags, acf_weights
