@@ -235,3 +235,15 @@ fig.savefig("multi-tower-cross-validation-error-vs-n-params.pdf")
 fig.savefig("multi-tower-cross-validation-error-vs-n-params.png")
 
 plt.pause(1)
+
+encoding = {var_name: {"zlib": True, "_FillValue": -9.999e9} for var_name in ds.data_vars}
+encoding.update({coord_name: {"_FillValue": None} for coord_name in ds.coords})
+ds.to_netcdf("multi-tower-cross-validation-error-data-450-splits.nc4", encoding=encoding, format="NETCDF4_CLASSIC")
+
+ldesc_ds = xarray.Dataset.from_dataframe(ldesc.T)
+ldesc_ds["correlation_function"] = ldesc_ds["correlation_function"].astype("U9")
+ldesc_ds["count"] = ldesc_ds["count"].astype("i2")
+ldesc_ds["n_parameters"] = ldesc_ds["n_parameters"].astype("i1")
+encoding = {name: {"_FillValue": None} for name in ldesc_ds.coords}
+encoding.update({name: {"_FillValue": None} for name in ldesc_ds.data_vars})
+ldesc_ds.to_netcdf("multi-tower-cross-validation-error-summary-450-splits.nc4", encoding=encoding, format="NETCDF4_CLASSIC")
