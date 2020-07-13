@@ -4,6 +4,7 @@
 
 from __future__ import print_function, division
 import calendar
+import datetime
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -35,6 +36,12 @@ REPRESENTATIVE_DATA_SITES = {
     "phase-shift": ["US-Ne1", "US-Ne3", "US-NC2", "US-Ne2"],
     # "small": ["US-Ha1", "US-MMS", "US-Sta", "US-Dk3"],
 }
+
+############################################################
+# Set plotting defaults
+sns.set_context("paper")
+sns.set(style="whitegrid")
+sns.set_palette("colorblind")
 
 ############################################################
 # Read in data
@@ -131,18 +138,20 @@ for category, site_list in REPRESENTATIVE_DATA_SITES.items():
                 site_month_hour_data["casa_fluxes"].isel(month=month_num - 1),
                 label="CASA"
             )
+            ax.set_xlim(0, HOURS_PER_DAY - 1)
+            ax.set_ylim(-40, 10)
+            ax.set_xticks([0, 12, 24])
+            ax.set_xticks([6, 18], minor=True)
         for ax in axes[:, 0]:
             ax.set_ylabel("NEE (\N{MICRO SIGN}mol/m\N{SUPERSCRIPT TWO}/s)")
         for ax in axes[-1, :]:
             ax.set_xlabel("Hour")
-            ax.set_xlim(0, HOURS_PER_DAY - 1)
-            ax.set_ylim(-40, 10)
         fig.legend(
             [ameriflux_line, casa_line], ["AmeriFlux", "CASA"], ncol=2
         )
         fig.suptitle(site_name)
         fig.tight_layout()
-        fig.subplots_adjust(top=.9)
+        fig.subplots_adjust(top=.87)
         fig.savefig(
             "{category:s}-{site:s}-daily-cycle-climatology.pdf".format(
                 category=category, site=site_name
@@ -157,9 +166,12 @@ for category, site_list in REPRESENTATIVE_DATA_SITES.items():
     print(category)
     all_site_data = MATCHED_DATA_DS.sel(
         site=site_list
-    ).load().dropna(
-        "site", how="all"
-    )
+    ).load()
+    # Dropping all-na data shouldn't be relevant here.
+    # Change site_list if it is
+    # .dropna(
+    #     "site", how="all"
+    # )
     for site_name in site_list:
         print(site_name)
         site_data = all_site_data.sel(
@@ -167,27 +179,34 @@ for category, site_list in REPRESENTATIVE_DATA_SITES.items():
         ).load().dropna(
             "time", how="any"
         )
+        print(datetime.datetime.now(), "Starting resample")
         site_df = site_data.to_dataframe(
         ).loc[:, site_data.data_vars].resample("1H").mean()
+        print(datetime.datetime.now(), "Finding autocorrelation")
         correlation_data = correlation_utils.get_autocorrelation_stats(
             site_df["flux_difference"]
         )
-        fig, axes = plt.subplots(3, 1)
+        fig, axes = plt.subplots(3, 1, figsize=(6.5, 5))
+        print(datetime.datetime.now(), "Starting AmeriFlux line")
         site_df["ameriflux_fluxes"].plot.line(
             ax=axes[0]
         )
+        print(datetime.datetime.now(), "Starting CASA line")
         site_df["casa_fluxes"].plot.line(
             ax=axes[0]
         )
+        print(datetime.datetime.now(), "Starting smoothed lines")
         site_df["ameriflux_fluxes"].resample("2W").mean().plot.line(
             ax=axes[1]
         )
         site_df["casa_fluxes"].resample("2W").mean().plot.line(
             ax=axes[1]
         )
+        print(datetime.datetime.now(), "Starting Autocovariance")
         correlation_data["acovf"].plot.line(
             ax=axes[2]
         )
+        print(datetime.datetime.now(), "Done plots, starting ticks and labels")
         time_bounds = site_df.index.astype("M8[ns]")[[0, -1]]
         axes[0].set_xlim(time_bounds)
         axes[0].set_ylabel("NEE (\N{MICRO SIGN}mol/m\N{SUPERSCRIPT TWO}/s)")
@@ -213,13 +232,21 @@ for category, site_list in REPRESENTATIVE_DATA_SITES.items():
             "(\N{MICRO SIGN}mol\N{SUPERSCRIPT TWO}/"
             "m\N{SUPERSCRIPT FOUR}/s\N{SUPERSCRIPT TWO})"
         )
-        fig.subplots_adjust(left=.2)
+        fig.subplots_adjust(left=.2, hspace=0.3, top=0.9)
         fig.suptitle(site_name)
+        print(datetime.datetime.now(), "Writing pdf")
         fig.savefig(
             "{category:s}-{site:s}-time-series-correlations.pdf".format(
                 category=category, site=site_name
             )
         )
+        print(datetime.datetime.now(), "Wrote pdf, writing png")
+        fig.savefig(
+            "{category:s}-{site:s}-time-series-correlations.png".format(
+                category=category, site=site_name
+            )
+        )
+        print(datetime.datetime.now(), "Wrote png")
         for ax in axes[:2]:
             ax.set_xlim("2007-06-01", "2007-07-31")
         xtick_index = pd.timedelta_range(
@@ -234,11 +261,19 @@ for category, site_list in REPRESENTATIVE_DATA_SITES.items():
         axes[-1].set_xticklabels(np.arange(len(xtick_index)))
         axes[-1].set_xlabel("Time difference (weeks)")
         fig.subplots_adjust(top=.95, hspace=.8)
+        print(datetime.datetime.now(), "Writing short pdf")
         fig.savefig(
             "{category:s}-{site:s}-time-series-correlations-short.pdf".format(
                 category=category, site=site_name
             )
         )
+        print(datetime.datetime.now(), "Wrote short pdf, writing short png")
+        fig.savefig(
+            "{category:s}-{site:s}-time-series-correlations-short.png".format(
+                category=category, site=site_name
+            )
+        )
+        print(datetime.datetime.now(), "Wrote short png")
         plt.close(fig)
         break
 
