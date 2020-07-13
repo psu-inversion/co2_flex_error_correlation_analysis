@@ -28,6 +28,15 @@ MIN_YEARS_DATA = 4
 MIN_DATA_FRAC = 0.75
 
 ############################################################
+# Define representative sites
+REPRESENTATIVE_DATA_SITES = {
+    # "seasonal-positive": ["US-Bkg", "US-Ha2", "US-Blk"],
+    "seasonal-both": ["US-PFa", "US-Syv", "US-Los"],
+    "phase-shift": ["US-Ne1", "US-Ne3", "US-NC2", "US-Ne2"],
+    # "small": ["US-Ha1", "US-MMS", "US-Sta", "US-Dk3"],
+}
+
+############################################################
 # Read in data
 MATCHED_DATA_DS = xarray.open_dataset(
     "ameriflux-and-casa-matching-data-2.nc4",
@@ -41,19 +50,6 @@ MATCHED_DATA_MONTH_HOUR_DS = xarray.open_dataset(
 MATCHED_DATA_MONTH_DS = xarray.open_dataset(
     "ameriflux-and-casa-all-towers-seasonal-cycle.nc4"
 ).load()
-
-############################################################
-# Define representative sites
-REPRESENTATIVE_DATA_SITES = {
-    "seasonal-positive": ["US-Bkg", "US-Ha2", "US-Blk"],
-    "seasonal-both": ["US-PFa", "US-Syv", "US-Los"],
-    "phase-shift": ["US-Ne1", "US-Ne3", "US-NC2", "US-Ne2"],
-    "small": ["US-Ha1", "US-MMS", "US-Sta", "US-Dk3"],
-}
-REPRESENTATIVE_DATA_SITES = {
-    "seasonal-both": ["US-PFa", "US-Syv", "US-Los"],
-    "phase-shift": ["US-Ne1", "US-Ne3", "US-NC2", "US-Ne2"],
-}
 
 ############################################################
 # Produce the plots
