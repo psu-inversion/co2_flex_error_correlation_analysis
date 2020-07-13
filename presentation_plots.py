@@ -17,6 +17,8 @@ import correlation_utils
 import flux_correlation_function_fits
 import correlation_function_fits
 
+############################################################
+# Define constants for script
 DAYS_PER_YEAR = 365.2425
 HOURS_PER_DAY = 24
 HOURS_PER_YEAR = HOURS_PER_DAY * DAYS_PER_YEAR
@@ -25,6 +27,8 @@ MONTHS_PER_YEAR = 12
 MIN_YEARS_DATA = 4
 MIN_DATA_FRAC = 0.75
 
+############################################################
+# Read in data
 MATCHED_DATA_DS = xarray.open_dataset(
     "ameriflux-and-casa-matching-data-2.nc4",
     # There will be decent chunks of this where I need all times but
@@ -38,6 +42,8 @@ MATCHED_DATA_MONTH_DS = xarray.open_dataset(
     "ameriflux-and-casa-all-towers-seasonal-cycle.nc4"
 ).load()
 
+############################################################
+# Define representative sites
 REPRESENTATIVE_DATA_SITES = {
     "seasonal-positive": ["US-Bkg", "US-Ha2", "US-Blk"],
     "seasonal-both": ["US-PFa", "US-Syv", "US-Los"],
@@ -49,6 +55,8 @@ REPRESENTATIVE_DATA_SITES = {
     "phase-shift": ["US-Ne1", "US-Ne3", "US-NC2", "US-Ne2"],
 }
 
+############################################################
+# Produce the plots
 for category, site_list in REPRESENTATIVE_DATA_SITES.items():
     print(category)
     all_site_data = MATCHED_DATA_DS.sel(
@@ -56,16 +64,18 @@ for category, site_list in REPRESENTATIVE_DATA_SITES.items():
     ).load().dropna(
         "site", how="all"
     )
+    ############################################################
+    # Make a time series
     fig, axes = plt.subplots(3, 1, sharex=True)
     for ax, site_name in zip(axes, site_list):
         site_data = all_site_data.sel(site=site_name)
         ax.set_title(site_name)
-        ameriflux_line = ax.plot(
+        ameriflux_line, = ax.plot(
             site_data.coords["time"],
             site_data["ameriflux_fluxes"],
             label="AmeriFlux"
         )
-        casa_line = ax.plot(
+        casa_line, = ax.plot(
             site_data.coords["time"],
             site_data["casa_fluxes"],
             label="CASA"
@@ -75,6 +85,8 @@ for category, site_list in REPRESENTATIVE_DATA_SITES.items():
     )
     fig.savefig("{category:s}-flux-time-series.pdf".format(category=category))
     plt.close(fig)
+    ############################################################
+    # Plot seasonal cycle for the sites
     fig, axes = plt.subplots(3, 1, sharex=True)
     month_numbers = np.arange(12) + 1
     for ax, site_name in zip(axes, site_list):
@@ -82,10 +94,10 @@ for category, site_list in REPRESENTATIVE_DATA_SITES.items():
             site=site_name
         ).load()
         ax.set_title(site_name)
-        ameriflux_line = ax.plot(
+        ameriflux_line, = ax.plot(
             month_numbers, site_data["ameriflux_fluxes"], label="AmeriFlux"
         )
-        casa_line = ax.plot(
+        casa_line, = ax.plot(
             month_numbers, site_data["casa_fluxes"], label="CASA"
         )
     for ax in axes:
@@ -100,6 +112,8 @@ for category, site_list in REPRESENTATIVE_DATA_SITES.items():
         "{category:s}-flux-monthly-climatology.pdf".format(category=category)
     )
     plt.close(fig)
+    ############################################################
+    # Plot daily cycle as a function of month
     hour_numbers = np.arange(HOURS_PER_DAY)
     for site_name in site_list:
         print(site_name)
@@ -111,12 +125,12 @@ for category, site_list in REPRESENTATIVE_DATA_SITES.items():
         for month_num in month_numbers:
             ax = axes_order[month_num % MONTHS_PER_YEAR]
             ax.set_title(calendar.month_name[month_num])
-            ameriflux_line = ax.plot(
+            ameriflux_line, = ax.plot(
                 hour_numbers,
                 site_month_hour_data["ameriflux_fluxes"].isel(month=month_num - 1),
                 label="AmeriFlux"
             )
-            casa_line = ax.plot(
+            casa_line, = ax.plot(
                 hour_numbers,
                 site_month_hour_data["casa_fluxes"].isel(month=month_num - 1),
                 label="CASA"
@@ -140,6 +154,9 @@ for category, site_list in REPRESENTATIVE_DATA_SITES.items():
         )
         plt.close(fig)
 
+############################################################
+# Plot time series, smoothed time series, and autocovariance
+# Long and short versions of this plot to show different scales
 for category, site_list in REPRESENTATIVE_DATA_SITES.items():
     print(category)
     all_site_data = MATCHED_DATA_DS.sel(
@@ -232,6 +249,8 @@ for category, site_list in REPRESENTATIVE_DATA_SITES.items():
 print("Done climatology plots")
 LONG_DATA_SITES = []
 
+############################################################
+# Find and plot towers with lots of data
 print("Finding sites with long data")
 for site_name in MATCHED_DATA_DS.indexes["site"]:
     site_data = MATCHED_DATA_DS.sel(site=site_name).load().dropna(
