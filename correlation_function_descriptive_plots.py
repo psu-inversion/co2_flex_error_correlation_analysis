@@ -10,8 +10,12 @@ import textwrap
 import numpy as np
 import numexpr as ne
 import matplotlib.pyplot as plt
+import seaborn as sns
 
 import correlation_function_fits
+
+############################################################
+# Set up constants for plots
 
 # For deomonstration purposes only
 DAYS_PER_YEAR = 6
@@ -31,7 +35,7 @@ GLOBAL_DICT.update({
 })
 
 TIMES = np.linspace(0, DAYS_PER_YEAR, 601)
-AX_HEIGHT = 5
+AX_HEIGHT = 5.5
 AX_WIDTH = 6
 
 LOCAL_DICT = {"tdata": TIMES}
@@ -44,6 +48,15 @@ for part in ("daily", "dm", "ann"):
         # I'm ignoring this for now
         "{part:s}_timescale".format(part=part): 100,
     })
+
+############################################################
+# Set plotting defaults
+sns.set_context("paper")
+sns.set(style="whitegrid")
+sns.set_palette("colorblind")
+
+############################################################
+# create plots
 
 # Describe axes I'm using
 fig, ax = plt.subplots(1, 1, figsize=(AX_WIDTH, AX_HEIGHT))
@@ -104,8 +117,20 @@ fig, axes = plt.subplots(
     sharex=True, sharey=True,
 )
 
-for axes_row, part_form in zip(axes, correlation_function_fits.PartForm):
-    for ax, func_part in zip(axes_row, correlation_function_fits.CorrelationPart):
+for axes_row, part_form in zip(
+        axes,
+        sorted(
+            correlation_function_fits.PartForm,
+            key=lambda part_form: len(
+                part_form.get_parameters(
+                    correlation_function_fits.CorrelationPart.DAILY
+                )
+            )
+        )
+):
+    for ax, func_part in zip(
+            axes_row, correlation_function_fits.CorrelationPart
+    ):
         if func_part.is_modulation():
             expression = part_form.get_expression(func_part)
             expression += " * cos(TWO_PI_OVER_DAY * tdata)"
@@ -113,7 +138,7 @@ for axes_row, part_form in zip(axes, correlation_function_fits.PartForm):
             expression = part_form.get_expression(func_part)
         ax.plot(
             *np.broadcast_arrays(
-            TIMES,
+                TIMES,
                 ne.evaluate(
                     expression,
                     global_dict=GLOBAL_DICT,
