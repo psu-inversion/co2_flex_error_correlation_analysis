@@ -7,6 +7,10 @@ import seaborn as sns
 import xarray
 import statsmodels.formula.api as smf
 
+sns.set_context("paper")
+sns.set(style="whitegrid")
+sns.set_palette("colorblind")
+
 
 ############################################################
 # Define description function
@@ -157,7 +161,7 @@ df_for_plot = df.rename(
 grid = sns.catplot(
     x="cross_validation_error", y="Daily Cycle\nModulation",
     row="Daily Cycle", col="Annual Cycle",
-    data=df_for_plot, height=1.6, aspect=1.4,
+    data=df_for_plot, height=1.6, aspect=1.6,
     margin_titles=True, kind="box",
     sharex=True, sharey=True,
 )
@@ -167,18 +171,21 @@ for ax in grid.axes[:, -1]:
             child.set_visible(False)
 
 grid.axes[0, -1].set_title("", visible=True)
+grid.axes[0, 0].set_xlim(0, None)
 grid.set_titles(
     row_template="{row_var: ^11s}\n{row_name: ^11s}",
     col_template="{col_var: ^11s}\n{col_name: ^11s}"
 )
 grid.set_xlabels("Cross-Validation\nError")
+grid.fig.tight_layout()
 grid.fig.savefig("multi-tower-cross-validation-error-by-function.pdf")
+grid.fig.savefig("multi-tower-cross-validation-error-by-function.png")
 
 median_sort_order = df.groupby("correlation_function").median().sort_values(
     "cross_validation_error"
 ).index
 
-fig = plt.figure(figsize=(5.5, 10))
+fig = plt.figure(figsize=(5.5, 11))
 ax = sns.boxplot(
     x="cross_validation_error", y="correlation_function_short_name",
     data=df_for_plot.reindex(index=median_sort_order, level=0),
@@ -187,6 +194,23 @@ ax = sns.boxplot(
 fig.subplots_adjust(left=0.21, top=1, bottom=0.05)
 ax.set_ylabel("Correlation Function Short Name")
 ax.set_xlabel("Cross-Validation Error")
+fig.tight_layout()
+fig.savefig("multi-tower-cross-validation-error-sorted-long.pdf")
+fig.savefig("multi-tower-cross-validation-error-sorted-long.png")
+
+fig = plt.figure(figsize=(12, 5.5))
+ax = sns.boxplot(
+    y="cross_validation_error", x="correlation_function_short_name",
+    data=df_for_plot.reindex(index=median_sort_order, level=0),
+    # kind="box",
+)
+fig.autofmt_xdate()
+fig.subplots_adjust(left=0.21, top=1, bottom=0.05)
+ax.set_xlabel("Correlation Function Short Name")
+ax.set_ylabel("Cross-Validation Error")
+fig.tight_layout()
+fig.savefig("multi-tower-cross-validation-error-sorted-wide.pdf")
+fig.savefig("multi-tower-cross-validation-error-sorted-wide.png")
 
 ldesc = long_description(
     # Make the column names shorter
@@ -206,5 +230,8 @@ fig = plt.figure(figsize=(4, 4.5))
 ax = sns.scatterplot(x="n_parameters", y="50%", data=ldesc.T, x_jitter=True)
 ax.set_ylabel("Median Cross-Validation Error")
 ax.set_xlabel("Number of Parameters")
+fig.tight_layout()
+fig.savefig("multi-tower-cross-validation-error-vs-n-params.pdf")
+fig.savefig("multi-tower-cross-validation-error-vs-n-params.png")
 
 plt.pause(1)
