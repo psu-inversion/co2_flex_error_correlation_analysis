@@ -6,9 +6,29 @@ import seaborn as sns
 import xarray
 import statsmodels.formula.api as smf
 
-ds = xarray.open_dataset(
+############################################################
+# Read in and merge datasets1
+ds1 = xarray.open_dataset(
     "ameriflux-minus-casa-autocorrelation-function-multi-tower-fits-200splits-run1.nc4"
 )
+ds2 = xarray.open_dataset(
+    "ameriflux-minus-casa-autocorrelation-function-multi-tower-fits-250splits-run1.nc4"
+)
+ds = xarray.concat(
+    [
+        ds1,
+        ds2.assign_coords(
+            splits=pd.RangeIndex(ds1.dims["splits"], ds1.dims["splits"] + ds2.dims["splits"])
+        )
+    ],
+    dim="splits",
+)
+ds.coords["n_parameters"] = ds["optimized_parameters"].isel(splits=0).count(
+    "parameter_name"
+).drop_vars("splits").astype("i1")
+
+############################################################
+# Turn dataset into dataframe
 df = ds["cross_validation_error"].to_dataframe().replace(
     "Geostatistical", "Geostat."
 ).replace(
