@@ -49,7 +49,7 @@ HOURS_PER_YEAR = HOURS_PER_DAY * DAYS_PER_YEAR
 N_YEARS_DATA = 4
 REQUIRED_DATA_FRAC = 0.8
 
-N_SPLITS = 250
+N_SPLITS = 300
 # There are 75 towers that fit my criteria
 N_TRAINING = 45
 N_HYPER_TRAIN = 30
@@ -799,7 +799,7 @@ encoding.update({name: {"_FillValue": None}
                  for name in CROSS_TOWER_FIT_ERROR_DS.coords})
 CROSS_TOWER_FIT_ERROR_DS.to_netcdf(
     "ameriflux-minus-casa-autocorrelation-function-multi-tower-fits"
-    "-250splits-run1.nc4",
+    "-300splits-run1.nc4",
     format="NETCDF4", encoding=encoding
 )
 _LOGGER.info("Saved output")
