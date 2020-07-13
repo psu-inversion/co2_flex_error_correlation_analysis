@@ -2,9 +2,82 @@
 
 import matplotlib.pyplot as plt
 import pandas as pd
+import scipy
 import seaborn as sns
 import xarray
 import statsmodels.formula.api as smf
+
+
+############################################################
+# Define description function
+def long_description(df, ci_width=0.95):
+    """Print longer description of df.
+
+    Parameters
+    ----------
+    df: pd.DataFrame
+    ci_width: float
+         Width of confidence intervals.
+         Must between 0 and 1.
+
+    Returns
+    -------
+    pd.DataFrame
+    """
+    df_stats = df.describe()
+    df_stats_loc = df_stats.loc
+    # Robust measures of scale
+    df_stats_loc["IQR", :] = df_stats_loc["75%", :] - df_stats_loc["25%", :]
+    df_stats_loc["mean abs. dev.", :] = df.mad()
+    deviation_from_median = df - df_stats_loc["50%", :]
+    df_stats_loc["med. abs. dev.", :] = deviation_from_median.abs().median()
+    # Higher-order moments
+    df_stats_loc["Fisher skewness", :] = df.skew()
+    df_stats_loc["Y-K skewness", :] = (
+        (df_stats_loc["75%", :] + df_stats_loc["25%", :] -
+         2 * df_stats_loc["50%", :]) /
+        (df_stats_loc["75%", :] - df_stats_loc["25%", :])
+    )
+    df_stats_loc["Fisher kurtosis", :] = df.kurt()
+    # Confidence intervals
+    for col_name in df:
+        # I'm already dropping NAs for the rest of these.
+        mean, var, std = scipy.stats.bayes_mvs(
+            df[col_name].dropna(),
+            alpha=ci_width
+        )
+        # Record mean
+        df_stats_loc["Mean point est", col_name] = mean[0]
+        df_stats_loc[
+            "Mean {width:2d}%CI low".format(width=round(ci_width * 100)),
+            col_name
+        ] = mean[1][0]
+        df_stats_loc[
+            "Mean {width:2d}%CI high".format(width=round(ci_width * 100)),
+            col_name
+        ] = mean[1][1]
+        # Record var
+        df_stats_loc["Var. point est", col_name] = var[0]
+        df_stats_loc[
+            "Var. {width:2d}%CI low".format(width=round(ci_width * 100)),
+            col_name
+        ] = var[1][0]
+        df_stats_loc[
+            "Var. {width:2d}%CI high".format(width=round(ci_width * 100)),
+            col_name
+        ] = var[1][1]
+        # Record Std Dev
+        df_stats_loc["std point est", col_name] = std[0]
+        df_stats_loc[
+            "std {width:2d}%CI low".format(width=round(ci_width * 100)),
+            col_name
+        ] = std[1][0]
+        df_stats_loc[
+            "std {width:2d}%CI high".format(width=round(ci_width * 100)),
+            col_name
+        ] = std[1][1]
+    return df_stats
+
 
 ############################################################
 # Read in and merge datasets1
@@ -114,5 +187,24 @@ ax = sns.boxplot(
 fig.subplots_adjust(left=0.21, top=1, bottom=0.05)
 ax.set_ylabel("Correlation Function Short Name")
 ax.set_xlabel("Cross-Validation Error")
+
+ldesc = long_description(
+    # Make the column names shorter
+    df.reset_index()
+    .drop(columns="correlation_function")
+    .rename(columns={"correlation_function_short_name": "correlation_function"})
+    .set_index(["correlation_function", "splits"])
+    # I only care about the cross-validation error for this
+    ["cross_validation_error"]
+    # Turn it back into a rectangle: rows are splits, columns are functions
+    .unstack(0)
+)
+ldesc.loc["n_parameters", :] = ds.coords["n_parameters"].to_dataframe(
+).set_index("correlation_function_short_name")["n_parameters"].iloc[:, 0]
+
+fig = plt.figure(figsize=(4, 4.5))
+ax = sns.scatterplot(x="n_parameters", y="50%", data=ldesc.T, x_jitter=True)
+ax.set_ylabel("Median Cross-Validation Error")
+ax.set_xlabel("Number of Parameters")
 
 plt.pause(1)
