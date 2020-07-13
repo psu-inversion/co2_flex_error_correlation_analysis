@@ -755,12 +755,12 @@ for i in range(N_SPLITS):
                     "parameter_name_adjoint": (
                         ("parameter_name_adjoint",), parameter_list
                     ),
-                    "training_towers": (("training_towers",), training_towers),
+                    "training_towers": (("splits", "n_training",), training_towers.reshape(1, -1)),
                     "correlation_function": (
                         (), correlation_function_long_name
                     ),
                     "splits": (
-                        (), i
+                        ("splits",), i
                     ),
                 },
             )
