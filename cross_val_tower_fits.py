@@ -760,7 +760,7 @@ for i in range(N_SPLITS):
                         (), correlation_function_long_name
                     ),
                     "splits": (
-                        ("splits",), i
+                        ("splits",), np.array([i], dtype="i2"),
                     ),
                 },
             )
