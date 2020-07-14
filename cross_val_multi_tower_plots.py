@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+from __future__ import print_function
 
 import matplotlib.pyplot as plt
 import pandas as pd
@@ -161,7 +162,7 @@ df_for_plot = df.rename(
 grid = sns.catplot(
     x="cross_validation_error", y="Daily Cycle\nModulation",
     row="Daily Cycle", col="Annual Cycle",
-    data=df_for_plot, height=1.6, aspect=1.6,
+    data=df_for_plot, height=1.7, aspect=1.7,
     margin_titles=True, kind="box",
     sharex=True, sharey=True,
 )
@@ -226,7 +227,7 @@ ldesc = long_description(
 ldesc.loc["n_parameters", :] = ds.coords["n_parameters"].to_dataframe(
 ).set_index("correlation_function_short_name")["n_parameters"].iloc[:, 0]
 
-fig = plt.figure(figsize=(4, 4.5))
+fig = plt.figure(figsize=(4.5, 3.5))
 ax = sns.scatterplot(x="n_parameters", y="50%", data=ldesc.T, x_jitter=True)
 ax.set_ylabel("Median Cross-Validation Error")
 ax.set_xlabel("Number of Parameters")
