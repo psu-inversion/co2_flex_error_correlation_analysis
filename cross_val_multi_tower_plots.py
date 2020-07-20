@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 from __future__ import print_function
 
+import numpy as np
 import matplotlib.pyplot as plt
 import pandas as pd
 import scipy
@@ -97,10 +98,37 @@ ds = xarray.concat(
         ds1,
         ds2.assign_coords(
             splits=pd.RangeIndex(ds1.dims["splits"], ds1.dims["splits"] + ds2.dims["splits"])
-        )
+        ),
     ],
     dim="splits",
 )
+
+# Fill in the training towers
+ALL_TOWERS = np.unique(ds["validation_towers"].values.astype("U6").flat)
+ds["training_towers"] = (
+    ("splits", "n_training"),
+    np.array([
+        np.setdiff1d(ALL_TOWERS, val_towers)
+        for val_towers in ds["validation_towers"].values.astype("U6")
+    ])
+)
+
+ds3 = xarray.open_dataset(
+    "ameriflux-minus-casa-autocorrelation-function-multi-tower-fits-300splits-run1.nc4"
+)
+ds = xarray.concat(
+    [
+        ds,
+        ds3.assign_coords(
+            splits=pd.RangeIndex(
+                ds.dims["splits"],
+                ds.dims["splits"] + ds3.dims["splits"]
+            )
+        ),
+    ],
+    dim="splits",
+)
+
 ds.coords["n_parameters"] = ds["optimized_parameters"].isel(splits=0).count(
     "parameter_name"
 ).drop_vars("splits").astype("i1")
