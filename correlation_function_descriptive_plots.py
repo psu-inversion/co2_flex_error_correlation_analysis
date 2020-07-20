@@ -73,6 +73,17 @@ fig.tight_layout()
 fig.savefig("demonstration-setup.pdf")
 plt.close(fig)
 
+
+# Show what the functions look like
+PART_FORMS = sorted(
+    correlation_function_fits.PartForm,
+    key=lambda part_form: len(
+        part_form.get_parameters(
+            correlation_function_fits.CorrelationPart.DAILY
+        )
+    )
+)
+
 fig, axes = plt.subplots(
     len(correlation_function_fits.PartForm),
     len(correlation_function_fits.CorrelationPart),
@@ -82,14 +93,7 @@ fig, axes = plt.subplots(
 
 for axes_row, part_form in zip(
         axes,
-        sorted(
-            correlation_function_fits.PartForm,
-            key=lambda part_form: len(
-                part_form.get_parameters(
-                    correlation_function_fits.CorrelationPart.DAILY
-                )
-            )
-        )
+        PART_FORMS
 ):
     for ax, func_part in zip(
             axes_row, correlation_function_fits.CorrelationPart
@@ -114,7 +118,7 @@ for axes_row, part_form in zip(
         ax.set_xticks(np.arange(0, DAYS_PER_YEAR + EPS, 3))
         ax.set_xticks(np.arange(0, DAYS_PER_YEAR + EPS, 1), minor=True)
 
-for ax, part_form in zip(axes[:, 0], correlation_function_fits.PartForm):
+for ax, part_form in zip(axes[:, 0], PART_FORMS):
     ax.set_ylabel(textwrap.fill(part_form.value, 14))
 
 for ax, func_part in zip(
@@ -124,8 +128,9 @@ for ax, func_part in zip(
     ax.set_title(func_part)
 
 for ax in axes[-1, :]:
-    ax.set_xlabel("Time Lag (days)")
+    ax.set_xlabel("Time Lag (days)\n(6 days = 1 year)")
 
+fig.tight_layout()
 fig.savefig("demonstration-corr-fun-slots-and-forms.pdf")
 fig.savefig("demonstration-corr-fun-slots-and-forms.png")
 plt.close(fig)
