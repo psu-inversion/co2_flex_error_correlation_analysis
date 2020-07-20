@@ -95,7 +95,9 @@ ds2 = xarray.open_dataset(
 )
 ds = xarray.concat(
     [
-        ds1,
+        ds1.assign_coords(
+            splits=pd.RangeIndex(0, ds1.dims["splits"])
+        ),
         ds2.assign_coords(
             splits=pd.RangeIndex(ds1.dims["splits"], ds1.dims["splits"] + ds2.dims["splits"])
         ),
@@ -112,9 +114,13 @@ ds["training_towers"] = (
         for val_towers in ds["validation_towers"].values.astype("U6")
     ])
 )
+del ds1, ds2
 
 ds3 = xarray.open_dataset(
     "ameriflux-minus-casa-autocorrelation-function-multi-tower-fits-300splits-run1.nc4"
+)
+ds4 = xarray.open_dataset(
+    "ameriflux-minus-casa-autocorrelation-function-multi-tower-fits-300splits-run2.nc4"
 )
 ds = xarray.concat(
     [
@@ -125,9 +131,16 @@ ds = xarray.concat(
                 ds.dims["splits"] + ds3.dims["splits"]
             )
         ),
+        ds4.assign_coords(
+            splits=pd.RangeIndex(
+                ds.dims["splits"] + ds3.dims["splits"],
+                ds.dims["splits"] + ds3.dims["splits"] + ds4.dims["splits"],
+            )
+        )
     ],
     dim="splits",
 )
+del ds3, ds4
 
 ds.coords["n_parameters"] = ds["optimized_parameters"].isel(splits=0).count(
     "parameter_name"
@@ -138,7 +151,7 @@ encoding = {
     for var_name in ds.data_vars
 }
 encoding.update({coord_name: {"_FillValue": None} for coord_name in ds.coords})
-ds.to_netcdf("multi-tower-cross-validation-error-data-750-splits.nc4",
+ds.to_netcdf("multi-tower-cross-validation-error-data-1050-splits.nc4",
              encoding=encoding, format="NETCDF4_CLASSIC")
 
 ############################################################

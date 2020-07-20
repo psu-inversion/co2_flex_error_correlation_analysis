@@ -799,7 +799,7 @@ encoding.update({name: {"_FillValue": None}
                  for name in CROSS_TOWER_FIT_ERROR_DS.coords})
 CROSS_TOWER_FIT_ERROR_DS.to_netcdf(
     "ameriflux-minus-casa-autocorrelation-function-multi-tower-fits"
-    "-300splits-run1.nc4",
+    "-300splits-run2.nc4",
     format="NETCDF4", encoding=encoding
 )
 _LOGGER.info("Saved output")
