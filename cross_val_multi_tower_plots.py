@@ -133,6 +133,14 @@ ds.coords["n_parameters"] = ds["optimized_parameters"].isel(splits=0).count(
     "parameter_name"
 ).drop_vars("splits").astype("i1")
 
+encoding = {
+    var_name: {"zlib": True, "_FillValue": -9.999e9}
+    for var_name in ds.data_vars
+}
+encoding.update({coord_name: {"_FillValue": None} for coord_name in ds.coords})
+ds.to_netcdf("multi-tower-cross-validation-error-data-750-splits.nc4",
+             encoding=encoding, format="NETCDF4_CLASSIC")
+
 ############################################################
 # Turn dataset into dataframe
 df = ds["cross_validation_error"].to_dataframe().replace(
@@ -264,10 +272,6 @@ fig.savefig("multi-tower-cross-validation-error-vs-n-params.pdf")
 fig.savefig("multi-tower-cross-validation-error-vs-n-params.png")
 
 plt.pause(1)
-
-encoding = {var_name: {"zlib": True, "_FillValue": -9.999e9} for var_name in ds.data_vars}
-encoding.update({coord_name: {"_FillValue": None} for coord_name in ds.coords})
-ds.to_netcdf("multi-tower-cross-validation-error-data-450-splits.nc4", encoding=encoding, format="NETCDF4_CLASSIC")
 
 ldesc_ds = xarray.Dataset.from_dataframe(ldesc.T)
 ldesc_ds["correlation_function"] = ldesc_ds["correlation_function"].astype("U9")
