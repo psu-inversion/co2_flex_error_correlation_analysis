@@ -211,13 +211,19 @@ df_for_plot = df.rename(
     }
 )
 
+############################################################
+# Draw boxplots showing details of distribution
 grid = sns.catplot(
     x="cross_validation_error", y="Daily Cycle\nModulation",
     row="Daily Cycle", col="Annual Cycle",
     data=df_for_plot, height=1.7, aspect=1.7,
     margin_titles=True, kind="box",
     sharex=True, sharey=True,
+    showmeans=True,
+    meanprops={"markerfacecolor": "white",
+               "markeredgecolor": "k"},
 )
+
 for ax in grid.axes[:, -1]:
     for child in ax.get_children():
         if isinstance(child, plt.Text):
@@ -234,14 +240,27 @@ grid.fig.tight_layout()
 grid.fig.savefig("multi-tower-cross-validation-error-by-function.pdf")
 grid.fig.savefig("multi-tower-cross-validation-error-by-function.png")
 
-median_sort_order = df.groupby("correlation_function").median().sort_values(
+for ax in grid.axes.flat:
+    ax.set_xscale("log")
+    ax.set_xlim(0.08e9, 4e9)
+
+grid.fig.savefig("multi-tower-log-cross-validation-error-by-function.pdf")
+grid.fig.savefig("multi-tower-log-cross-validation-error-by-function.png")
+
+############################################################
+# Sorted box plots
+mean_sort_order = df.groupby("correlation_function").mean().sort_values(
     "cross_validation_error"
 ).index
 
+# Horizontal box plots
 fig = plt.figure(figsize=(5.5, 11))
 ax = sns.boxplot(
     x="cross_validation_error", y="correlation_function_short_name",
-    data=df_for_plot.reindex(index=median_sort_order, level=0),
+    data=df_for_plot.reindex(index=mean_sort_order, level=0),
+    showmeans=True,
+    meanprops={"markerfacecolor": "white",
+               "markeredgecolor": "k"},
     # kind="box",
 )
 fig.subplots_adjust(left=0.21, top=1, bottom=0.05)
@@ -251,10 +270,18 @@ fig.tight_layout()
 fig.savefig("multi-tower-cross-validation-error-sorted-long.pdf")
 fig.savefig("multi-tower-cross-validation-error-sorted-long.png")
 
+ax.set_xscale("log")
+fig.savefig("multi-tower-log-cross-validation-error-sorted-long.pdf")
+fig.savefig("multi-tower-log-cross-validation-error-sorted-long.png")
+
+# Vertical box plots
 fig = plt.figure(figsize=(12, 5.5))
 ax = sns.boxplot(
     y="cross_validation_error", x="correlation_function_short_name",
-    data=df_for_plot.reindex(index=median_sort_order, level=0),
+    data=df_for_plot.reindex(index=mean_sort_order, level=0),
+    showmeans=True,
+    meanprops={"markerfacecolor": "white",
+               "markeredgecolor": "k"},
     # kind="box",
 )
 fig.autofmt_xdate()
@@ -265,6 +292,12 @@ fig.tight_layout()
 fig.savefig("multi-tower-cross-validation-error-sorted-wide.pdf")
 fig.savefig("multi-tower-cross-validation-error-sorted-wide.png")
 
+ax.set_yscale("log")
+fig.savefig("multi-tower-cross-validation-error-sorted-wide.pdf")
+fig.savefig("multi-tower-cross-validation-error-sorted-wide.png")
+
+############################################################
+# Calculate summary statistics
 ldesc = long_description(
     # Make the column names shorter
     df.reset_index()
@@ -279,13 +312,19 @@ ldesc = long_description(
 ldesc.loc["n_parameters", :] = ds.coords["n_parameters"].to_dataframe(
 ).set_index("correlation_function_short_name")["n_parameters"].iloc[:, 0]
 
+############################################################
+# Plot cross-validation error as a function of complexity
 fig = plt.figure(figsize=(4.5, 3.5))
-ax = sns.scatterplot(x="n_parameters", y="50%", data=ldesc.T, x_jitter=True)
-ax.set_ylabel("Median Cross-Validation Error")
+ax = sns.scatterplot(x="n_parameters", y="mean", data=ldesc.T, x_jitter=True)
+ax.set_ylabel("Mean Cross-Validation Error")
 ax.set_xlabel("Number of Parameters")
 fig.tight_layout()
 fig.savefig("multi-tower-cross-validation-error-vs-n-params.pdf")
 fig.savefig("multi-tower-cross-validation-error-vs-n-params.png")
+
+ax.set_yscale("log")
+fig.savefig("multi-tower-log-cross-validation-error-vs-n-params.pdf")
+fig.savefig("multi-tower-log-cross-validation-error-vs-n-params.png")
 
 plt.pause(1)
 
@@ -295,4 +334,5 @@ ldesc_ds["count"] = ldesc_ds["count"].astype("i2")
 ldesc_ds["n_parameters"] = ldesc_ds["n_parameters"].astype("i1")
 encoding = {name: {"_FillValue": None} for name in ldesc_ds.coords}
 encoding.update({name: {"_FillValue": None} for name in ldesc_ds.data_vars})
-ldesc_ds.to_netcdf("multi-tower-cross-validation-error-summary-450-splits.nc4", encoding=encoding, format="NETCDF4_CLASSIC")
+ldesc_ds.to_netcdf("multi-tower-cross-validation-error-summary-1050-splits.nc4",
+                   encoding=encoding, format="NETCDF4_CLASSIC")
