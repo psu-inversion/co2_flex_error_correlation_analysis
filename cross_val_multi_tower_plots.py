@@ -86,73 +86,76 @@ def long_description(df, ci_width=0.95):
 
 
 ############################################################
-# Read in and merge datasets1
-ds1 = xarray.open_dataset(
-    "ameriflux-minus-casa-autocorrelation-function-multi-tower-fits-200splits-run1.nc4"
-)
-ds2 = xarray.open_dataset(
-    "ameriflux-minus-casa-autocorrelation-function-multi-tower-fits-250splits-run1.nc4"
-)
-ds = xarray.concat(
-    [
-        ds1.assign_coords(
-            splits=pd.RangeIndex(0, ds1.dims["splits"])
-        ),
-        ds2.assign_coords(
-            splits=pd.RangeIndex(ds1.dims["splits"], ds1.dims["splits"] + ds2.dims["splits"])
-        ),
-    ],
-    dim="splits",
-)
+# Read in and merge datasets
+# ds1 = xarray.open_dataset(
+#     "ameriflux-minus-casa-autocorrelation-function-multi-tower-fits-200splits-run1.nc4"
+# )
+# ds2 = xarray.open_dataset(
+#     "ameriflux-minus-casa-autocorrelation-function-multi-tower-fits-250splits-run1.nc4"
+# )
+# ds = xarray.concat(
+#     [
+#         ds1.assign_coords(
+#             splits=pd.RangeIndex(0, ds1.dims["splits"])
+#         ),
+#         ds2.assign_coords(
+#             splits=pd.RangeIndex(ds1.dims["splits"], ds1.dims["splits"] + ds2.dims["splits"])
+#         ),
+#     ],
+#     dim="splits",
+# )
 
-# Fill in the training towers
-ALL_TOWERS = np.unique(ds["validation_towers"].values.astype("U6").flat)
-ds["training_towers"] = (
-    ("splits", "n_training"),
-    np.array([
-        np.setdiff1d(ALL_TOWERS, val_towers)
-        for val_towers in ds["validation_towers"].values.astype("U6")
-    ])
-)
-del ds1, ds2
+# # Fill in the training towers
+# ALL_TOWERS = np.unique(ds["validation_towers"].values.astype("U6").flat)
+# ds["training_towers"] = (
+#     ("splits", "n_training"),
+#     np.array([
+#         np.setdiff1d(ALL_TOWERS, val_towers)
+#         for val_towers in ds["validation_towers"].values.astype("U6")
+#     ])
+# )
+# del ds1, ds2
 
-ds3 = xarray.open_dataset(
-    "ameriflux-minus-casa-autocorrelation-function-multi-tower-fits-300splits-run1.nc4"
-)
-ds4 = xarray.open_dataset(
-    "ameriflux-minus-casa-autocorrelation-function-multi-tower-fits-300splits-run2.nc4"
-)
-ds = xarray.concat(
-    [
-        ds,
-        ds3.assign_coords(
-            splits=pd.RangeIndex(
-                ds.dims["splits"],
-                ds.dims["splits"] + ds3.dims["splits"]
-            )
-        ),
-        ds4.assign_coords(
-            splits=pd.RangeIndex(
-                ds.dims["splits"] + ds3.dims["splits"],
-                ds.dims["splits"] + ds3.dims["splits"] + ds4.dims["splits"],
-            )
-        )
-    ],
-    dim="splits",
-)
-del ds3, ds4
+# ds3 = xarray.open_dataset(
+#     "ameriflux-minus-casa-autocorrelation-function-multi-tower-fits-300splits-run1.nc4"
+# )
+# ds4 = xarray.open_dataset(
+#     "ameriflux-minus-casa-autocorrelation-function-multi-tower-fits-300splits-run2.nc4"
+# )
+# ds = xarray.concat(
+#     [
+#         ds,
+#         ds3.assign_coords(
+#             splits=pd.RangeIndex(
+#                 ds.dims["splits"],
+#                 ds.dims["splits"] + ds3.dims["splits"]
+#             )
+#         ),
+#         ds4.assign_coords(
+#             splits=pd.RangeIndex(
+#                 ds.dims["splits"] + ds3.dims["splits"],
+#                 ds.dims["splits"] + ds3.dims["splits"] + ds4.dims["splits"],
+#             )
+#         )
+#     ],
+#     dim="splits",
+# )
+# del ds3, ds4
 
-ds.coords["n_parameters"] = ds["optimized_parameters"].isel(splits=0).count(
-    "parameter_name"
-).drop_vars("splits").astype("i1")
+# ds.coords["n_parameters"] = ds["optimized_parameters"].isel(splits=0).count(
+#     "parameter_name"
+# ).drop_vars("splits").astype("i1")
 
-encoding = {
-    var_name: {"zlib": True, "_FillValue": -9.999e9}
-    for var_name in ds.data_vars
-}
-encoding.update({coord_name: {"_FillValue": None} for coord_name in ds.coords})
-ds.to_netcdf("multi-tower-cross-validation-error-data-1050-splits.nc4",
-             encoding=encoding, format="NETCDF4_CLASSIC")
+# encoding = {
+#     var_name: {"zlib": True, "_FillValue": -9.999e9}
+#     for var_name in ds.data_vars
+# }
+# encoding.update({coord_name: {"_FillValue": None} for coord_name in ds.coords})
+# ds.to_netcdf("multi-tower-cross-validation-error-data-1050-splits.nc4",
+#              encoding=encoding, format="NETCDF4_CLASSIC")
+ds = xarray.open_dataset(
+    "multi-tower-cross-validation-error-data-1050-splits.nc4"
+)
 
 ############################################################
 # Turn dataset into dataframe
