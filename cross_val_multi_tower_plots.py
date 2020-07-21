@@ -9,6 +9,7 @@ import scipy
 import seaborn as sns
 import xarray
 
+import patsy
 import statsmodels.api as sm
 import statsmodels.formula.api as smf
 from statsmodels.stats.anova import anova_lm
@@ -207,8 +208,6 @@ print(
     sep="\n"
 )
 
-# import formulaic
-import patsy
 models = []
 results = []
 
@@ -222,9 +221,6 @@ for i in range(3 + 1):
     if i == 0:
         # One of the libraries doesn't like (A + B) ** 0
         formula = "cross_validation_error ~ 1"
-    # full_y, full_X = formulaic.Formula(
-    #     formula
-    # ).get_model_matrix(df.dropna())
     full_y, full_X = patsy.dmatrices(formula, df, return_type="dataframe")
     col_index_to_keep = [
         i
@@ -238,50 +234,6 @@ for i in range(3 + 1):
         )
     ]
     reduced_X = full_X.iloc[:, col_index_to_keep]
-    # reduced_X.design_info = patsy.DesignInfo(
-    #     column_names=list(reduced_X.columns),
-    #     factor_infos=full_X.design_info.factor_infos,
-    #     term_codings=collections.OrderedDict([
-    #         (
-    #             term,
-    #             [
-    #                 subterm
-    #                 if (
-    #                         len(subterm.factors) == 1 or not
-    #                         (
-    #                             patsy.EvalFactor("daily_cycle") in subterm.factors
-    #                             and
-    #                             patsy.EvalFactor("annual_modulation_of_daily_cycle") in subterm.factors
-    #                         )
-    #                 ) else
-    #                 patsy.SubtermInfo(
-    #                     subterm.factors,
-    #                     {
-    #                         factor: (
-    #                             matrix
-    #                             if factor != patsy.EvalFactor("daily_cycle") else
-    #                             patsy.ContrastMatrix(
-    #                                 # Skip daily_cycle[T.Geostat.]
-    #                                 matrix.matrix[[0, 0, 2, 3], 1:],
-    #                                 # matrix.column_suffixes
-    #                                 [name for name in matrix.column_suffixes
-    #                                  if "Geostat" not in name]
-    #                             )
-    #                         )
-    #                         for factor, matrix in subterm.contrast_matrices.items()
-    #                     },
-    #                     # Four things to go in each slot
-    #                     (4 - 1) ** len(subterm.factors) -
-    #                     (4 - 1) ** (len(subterm.factors) - 1) +
-    #                     0,
-    #                 )
-    #                 for subterm in subterms
-    #             ]
-    #         )
-    #         for term, subterms in full_X.design_info.term_codings.items()
-    #     ]),
-    # )
-    # model = sm.OLS(full_y, reduced_X)
     model = smf.ols(
         formula, df,
         drop_cols=np.array([col for col in full_X.columns if col not in reduced_X.columns])
