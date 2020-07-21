@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 from __future__ import print_function
+import collections
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -7,6 +8,7 @@ import pandas as pd
 import scipy
 import seaborn as sns
 import xarray
+import statsmodels.api as sm
 import statsmodels.formula.api as smf
 
 sns.set_context("paper")
@@ -202,6 +204,85 @@ print(
     ).fit().summary(),
     sep="\n"
 )
+
+# import formulaic
+import patsy
+models = []
+results = []
+
+# Three slots for things to go in
+for i in range(1, 3 + 1):
+    formula = (
+        "cross_validation_error ~ "
+        "(daily_cycle + annual_modulation_of_daily_cycle + annual_cycle)"
+        " ** {i:d}".format(i=i)
+    )
+    # full_y, full_X = formulaic.Formula(
+    #     formula
+    # ).get_model_matrix(df.dropna())
+    full_y, full_X = patsy.dmatrices(formula, df, return_type="dataframe")
+    col_index_to_keep = [
+        i
+        for i, col in enumerate(full_X.columns)
+        if (
+                (
+                    ":daily_cycle[T.Geostat.]" not in col and
+                    not col.startswith("daily_cycle[T.Geostat.]:")
+                ) or
+                "annual_modulation_of_daily_cycle" not in col
+        )
+    ]
+    reduced_X = full_X.iloc[:, col_index_to_keep]
+    reduced_X.design_info = patsy.DesignInfo(
+        column_names=list(reduced_X.columns),
+        factor_infos=full_X.design_info.factor_infos,
+        term_codings=collections.OrderedDict([
+            (
+                term,
+                [
+                    subterm
+                    if (
+                            len(subterm.factors) == 1 or not
+                            (
+                                patsy.EvalFactor("daily_cycle") in subterm.factors
+                                and
+                                patsy.EvalFactor("annual_modulation_of_daily_cycle") in subterm.factors
+                            )
+                    ) else
+                    patsy.SubtermInfo(
+                        subterm.factors,
+                        {
+                            factor: (
+                                matrix
+                                if factor != patsy.EvalFactor("daily_cycle") else
+                                patsy.ContrastMatrix(
+                                    # Skip daily_cycle[T.Geostat.]
+                                    matrix.matrix[[0, 0, 2, 3], 1:],
+                                    # matrix.column_suffixes
+                                    [name for name in matrix.column_suffixes
+                                     if "Geostat" not in name]
+                                )
+                            )
+                            for factor, matrix in subterm.contrast_matrices.items()
+                        },
+                        # Four things to go in each slot
+                        (4 - 1) ** len(subterm.factors) -
+                        (4 - 1) ** (len(subterm.factors) - 1) +
+                        0,
+                    )
+                    for subterm in subterms
+                ]
+            )
+            for term, subterms in full_X.design_info.term_codings.items()
+        ]),
+    )
+    model = sm.OLS(full_y, reduced_X)
+    result = model.fit()
+    models.append(model)
+    results.append(result)
+
+from statsmodels.stats.anova import anova_lm
+anova_lm(*results)
 
 df_for_plot = df.rename(
     columns={
