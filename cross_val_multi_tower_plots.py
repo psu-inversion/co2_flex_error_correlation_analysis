@@ -378,6 +378,41 @@ fig.savefig("multi-tower-cross-validation-error-sorted-wide.pdf")
 fig.savefig("multi-tower-cross-validation-error-sorted-wide.png")
 
 ############################################################
+# Compare means with CIs
+grid = sns.catplot(
+    x="Daily Cycle",
+    y="cross_validation_error",
+    col="Daily Cycle\nModulation",
+    hue="Annual Cycle",
+    data=df_for_plot,
+    kind="point",
+    facet_kws={"subplot_kws": {"yscale": "log"}},
+    capsize=0.4,
+    height=4.1,
+    aspect=0.5
+)
+grid.fig.autofmt_xdate()
+grid.axes[0, 0].set_ylabel("Mean Cross-Validation Error (unitless)")
+grid.set_titles(
+    row_template="{row_var: ^11s}\n{row_name: ^11s}",
+    col_template="{col_var: ^11s}\n{col_name: ^11s}"
+)
+for ax in grid.axes[0, :]:
+    ylim = grid.axes[0, 0].get_ylim()
+    yticks_minor = [
+        fac * 10 ** exp
+        for exp in (8, 9)
+        for fac in range(2, 10)
+    ]
+    ax.set_yticks(
+        [tick for tick in yticks_minor if ylim[0] <= tick <= ylim[1]],
+        minor=True
+    )
+
+grid.fig.savefig("multi-tower-cross-validation-log-error-anova-variations.pdf")
+grid.fig.savefig("multi-tower-cross-validation-log-error-anova-variations.png")
+
+############################################################
 # Calculate summary statistics
 ldesc = long_description(
     # Make the column names shorter
