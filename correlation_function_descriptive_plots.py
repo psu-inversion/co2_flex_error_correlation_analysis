@@ -52,7 +52,7 @@ for part in ("daily", "dm", "ann"):
 ############################################################
 # Set plotting defaults
 sns.set_context("paper")
-sns.set(style="whitegrid")
+sns.set(style="ticks")
 sns.set_palette("colorblind")
 
 ############################################################

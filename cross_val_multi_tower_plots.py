@@ -15,7 +15,7 @@ import statsmodels.formula.api as smf
 from statsmodels.stats.anova import anova_lm
 
 sns.set_context("paper")
-sns.set(style="whitegrid")
+sns.set(style="ticks")
 sns.set_palette("colorblind")
 
 
@@ -243,7 +243,6 @@ for i in range(3 + 1):
     results.append(result)
 
 print(anova_lm(*results))
-print(anova_lm(results[-1]))
 
 df_for_plot = df.rename(
     columns={
@@ -285,6 +284,19 @@ grid.fig.savefig("multi-tower-cross-validation-error-by-function.png")
 for ax in grid.axes.flat:
     ax.set_xscale("log")
     ax.set_xlim(0.08e9, 4e9)
+    # xlim = ax.get_xlim()
+    # xticks_minor = [
+    #     fac * 10 ** exp
+    #     for exp in (7, 8, 9)
+    #     for fac in range(2, 10)
+    # ]
+    # ax.set_xticks(
+    #     [tick for tick in xticks_minor if xlim[0] <= tick <= xlim[1]],
+    #     minor=True
+    # )
+    # ax.tick_params(
+    #     which="minor", left=True, color=ax.get_ygridlines()[0].get_color()
+    # )
 
 grid.fig.savefig("multi-tower-log-cross-validation-error-by-function.pdf")
 grid.fig.savefig("multi-tower-log-cross-validation-error-by-function.png")
@@ -360,15 +372,18 @@ grid.set_titles(
 )
 for ax in grid.axes[0, :]:
     ylim = grid.axes[0, 0].get_ylim()
-    yticks_minor = [
-        fac * 10 ** exp
-        for exp in (8, 9)
-        for fac in range(2, 10)
-    ]
-    ax.set_yticks(
-        [tick for tick in yticks_minor if ylim[0] <= tick <= ylim[1]],
-        minor=True
-    )
+    # yticks_minor = [
+    #     fac * 10 ** exp
+    #     for exp in (8, 9)
+    #     for fac in range(2, 10)
+    # ]
+    # ax.set_yticks(
+    #     [tick for tick in yticks_minor if ylim[0] <= tick <= ylim[1]],
+    #     minor=True
+    # )
+    # ax.tick_params(
+    #     which="minor", left=True, color=ax.get_xgridlines()[0].get_color()
+    # )
 
 grid.fig.savefig("multi-tower-cross-validation-log-error-anova-variations.pdf")
 grid.fig.savefig("multi-tower-cross-validation-log-error-anova-variations.png")
@@ -392,7 +407,16 @@ ldesc.loc["n_parameters", :] = ds.coords["n_parameters"].to_dataframe(
 ############################################################
 # Plot cross-validation error as a function of complexity
 fig = plt.figure(figsize=(4.5, 3.5))
-ax = sns.scatterplot(x="n_parameters", y="mean", data=ldesc.T, x_jitter=True)
+ax = sns.scatterplot(x="n_parameters", y="mean", data=ldesc.T, x_jitter=True, alpha=0.6)
+ax.plot(
+    "n_parameters", "mean", "ko",
+    data=ldesc.loc[["n_parameters", "mean"], :].T.groupby("n_parameters").min().reset_index()
+)
+mean_error_by_parameters = ldesc.loc[["n_parameters", "mean"], :].T.set_index("n_parameters")
+ax.plot(
+    mean_error_by_parameters.idxmin(),
+    mean_error_by_parameters.min(), "ro"
+)
 ax.set_ylabel("Mean Cross-Validation Error")
 ax.set_xlabel("Number of Parameters")
 fig.tight_layout()
@@ -400,6 +424,19 @@ fig.savefig("multi-tower-cross-validation-error-vs-n-params.pdf")
 fig.savefig("multi-tower-cross-validation-error-vs-n-params.png")
 
 ax.set_yscale("log")
+ylim = ax.get_ylim()
+# yticks_minor = [
+#     fac * 10 ** exp
+#     for exp in (8, 9)
+#     for fac in range(2, 10)
+# ]
+# ax.set_yticks(
+#     [tick for tick in yticks_minor if ylim[0] <= tick <= ylim[1]],
+#     minor=True
+# )
+# ax.tick_params(
+#     which="minor", left=True, color=ax.get_ygridlines()[0].get_color()
+# )
 fig.savefig("multi-tower-log-cross-validation-error-vs-n-params.pdf")
 fig.savefig("multi-tower-log-cross-validation-error-vs-n-params.png")
 
