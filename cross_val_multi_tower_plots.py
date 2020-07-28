@@ -164,20 +164,20 @@ ds = xarray.open_dataset(
 
 ############################################################
 # Turn dataset into dataframe
-df = ds["cross_validation_error"].to_dataframe().replace(
-    "Geostatistical", "Geostat."
-).replace(
-    "3-term cosine series", "Cosines"
-).replace(
-    "Exponential sine-squared", "Exp. sin\N{SUPERSCRIPT TWO}"
-)
-slot_forms_ds = pd.Categorical(
-    df[slot_var],
-    categories=["None", "Geostat.", "Exp. sin\N{SUPERSCRIPT TWO}", "Cosines"],
-    ordered=True
-)
+df = ds["cross_validation_error"].to_dataframe().replace({
+    "Geostatistical": "Geostat.",
+    "Exponential sine-squared": "Exp. sin\N{SUPERSCRIPT TWO}",
+    "3-term cosine series": "Cosines"
+})
+
 for slot_var in ("daily_cycle", "annual_cycle", "annual_modulation_of_daily_cycle"):
-    df[slot_var] = slot_forms_ds
+    df[slot_var] = pd.Categorical(
+        df[slot_var],
+        categories=["None", "Geostat.", "Exp. sin\N{SUPERSCRIPT TWO}", "Cosines"],
+        ordered=True
+    )
+
+slot_forms_dtype = df[slot_var].dtype
 
 print(
     "Do the various slots improve the fit?",
@@ -429,7 +429,7 @@ parameter_variation_df[
     ["Daily Cycle", "Daily Cycle\nModulation", "Annual Cycle"]
 ] = parameter_variation_df[
     ["Daily Cycle", "Daily Cycle\nModulation", "Annual Cycle"]
-].astype(slot_forms_ds)
+].astype(slot_forms_dtype)
 
 grid = sns.catplot(
     x="Daily Cycle", y="optimized_parameters", col="Daily Cycle\nModulation", hue="Annual Cycle", data=parameter_variation_df, kind="point", height=4.1, aspect=0.5, ci=None,
