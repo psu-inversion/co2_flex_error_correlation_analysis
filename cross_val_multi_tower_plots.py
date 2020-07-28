@@ -171,12 +171,13 @@ df = ds["cross_validation_error"].to_dataframe().replace(
 ).replace(
     "Exponential sine-squared", "Exp. sin\N{SUPERSCRIPT TWO}"
 )
+slot_forms_ds = pd.Categorical(
+    df[slot_var],
+    categories=["None", "Geostat.", "Exp. sin\N{SUPERSCRIPT TWO}", "Cosines"],
+    ordered=True
+)
 for slot_var in ("daily_cycle", "annual_cycle", "annual_modulation_of_daily_cycle"):
-    df[slot_var] = pd.Categorical(
-        df[slot_var],
-        categories=["None", "Geostat.", "Exp. sin\N{SUPERSCRIPT TWO}", "Cosines"],
-        ordered=True
-    )
+    df[slot_var] = slot_forms_ds
 
 print(
     "Do the various slots improve the fit?",
@@ -440,8 +441,6 @@ ylim = ax.get_ylim()
 fig.savefig("multi-tower-log-cross-validation-error-vs-n-params.pdf")
 fig.savefig("multi-tower-log-cross-validation-error-vs-n-params.png")
 
-plt.pause(1)
-
 ldesc_ds = xarray.Dataset.from_dataframe(ldesc.T)
 ldesc_ds["correlation_function"] = ldesc_ds["correlation_function"].astype("U9")
 ldesc_ds["count"] = ldesc_ds["count"].astype("i2")
@@ -450,3 +449,37 @@ encoding = {name: {"_FillValue": None} for name in ldesc_ds.coords}
 encoding.update({name: {"_FillValue": None} for name in ldesc_ds.data_vars})
 ldesc_ds.to_netcdf("multi-tower-cross-validation-error-summary-1050-splits.nc4",
                    encoding=encoding, format="NETCDF4_CLASSIC")
+
+############################################################
+# Plot variation in parameter values
+parameter_variation_df = np.abs(
+    ds["optimized_parameters"].reduce(scipy.stats.variation, dim="splits", nan_policy="omit")
+).to_dataframe().replace({
+    "Geostatistical": "Geostat.",
+    "Exponential sine-squared": "Exp. sin\N{SUPERSCRIPT TWO}",
+    "3-term cosine series": "Cosines"
+}).rename(
+    columns={"annual_modulation_of_daily_cycle": "Daily Cycle\nModulation","annual_cycle": "Annual Cycle","daily_cycle": "Daily Cycle",}
+)
+
+parameter_variation_df[
+    ["Daily Cycle", "Daily Cycle\nModulation", "Annual Cycle"]
+] = parameter_variation_df[
+    ["Daily Cycle", "Daily Cycle\nModulation", "Annual Cycle"]
+].astype(slot_forms_ds)
+
+grid = sns.catplot(
+    x="Daily Cycle", y="optimized_parameters", col="Daily Cycle\nModulation", hue="Annual Cycle", data=parameter_variation_df, kind="point", height=4.1, aspect=0.5, ci=None,
+    # facet_kws={"subplot_kws": {"yscale": "log"}}
+)
+grid.fig.autofmt_xdate()
+grid.axes[0, 0].set_ylim(0, 2)
+grid.set_titles(
+    row_template="{row_var: ^11s}\n{row_name: ^11s}",
+    col_template="{col_var: ^11s}\n{col_name: ^11s}"
+)
+grid.axes[0, 0].set_ylabel("Mean Coefficient of Variation\n(unitless)")
+grid.fig.subplots_adjust(top=0.9, left=0.1)
+grid.fig.savefig("multi-tower-cross-validation-coefficient-variation.pdf")
+
+plt.pause(1)
