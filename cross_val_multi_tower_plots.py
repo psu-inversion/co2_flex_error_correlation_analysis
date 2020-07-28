@@ -189,7 +189,8 @@ print(
     sep="\n"
 )
 print(
-    "Does having something in the slots improve the fit and does having parameters improve on that?",
+    "Does having something in the slots improve the fit and\n"
+    "does having parameters improve on that?",
     smf.ols(
         "cross_validation_error ~ has_daily_cycle + "
         "daily_cycle_has_modulation + has_annual_cycle + "
@@ -227,11 +228,11 @@ for i in range(3 + 1):
         i
         for i, col in enumerate(full_X.columns)
         if (
-                (
-                    ":daily_cycle[T.Geostat.]" not in col and
-                    not col.startswith("daily_cycle[T.Geostat.]:")
-                ) or
-                "annual_modulation_of_daily_cycle" not in col
+            (
+                ":daily_cycle[T.Geostat.]" not in col and
+                not col.startswith("daily_cycle[T.Geostat.]:")
+            ) or
+            "annual_modulation_of_daily_cycle" not in col
         )
     ]
     reduced_X = full_X.iloc[:, col_index_to_keep]
@@ -423,7 +424,11 @@ parameter_variation_df = (
     "Exponential sine-squared": "Exp. sin\N{SUPERSCRIPT TWO}",
     "3-term cosine series": "Cosines"
 }).rename(
-    columns={"annual_modulation_of_daily_cycle": "Daily Cycle\nModulation","annual_cycle": "Annual Cycle","daily_cycle": "Daily Cycle",}
+    columns={
+        "annual_modulation_of_daily_cycle": "Daily Cycle\nModulation",
+        "annual_cycle": "Annual Cycle",
+        "daily_cycle": "Daily Cycle"
+    }
 )
 
 parameter_variation_df[
