@@ -285,19 +285,6 @@ grid.fig.savefig("multi-tower-cross-validation-error-by-function.png")
 for ax in grid.axes.flat:
     ax.set_xscale("log")
     ax.set_xlim(0.08e9, 4e9)
-    # xlim = ax.get_xlim()
-    # xticks_minor = [
-    #     fac * 10 ** exp
-    #     for exp in (7, 8, 9)
-    #     for fac in range(2, 10)
-    # ]
-    # ax.set_xticks(
-    #     [tick for tick in xticks_minor if xlim[0] <= tick <= xlim[1]],
-    #     minor=True
-    # )
-    # ax.tick_params(
-    #     which="minor", left=True, color=ax.get_ygridlines()[0].get_color()
-    # )
 
 grid.fig.savefig("multi-tower-log-cross-validation-error-by-function.pdf")
 grid.fig.savefig("multi-tower-log-cross-validation-error-by-function.png")
@@ -373,18 +360,6 @@ grid.set_titles(
 )
 for ax in grid.axes[0, :]:
     ylim = grid.axes[0, 0].get_ylim()
-    # yticks_minor = [
-    #     fac * 10 ** exp
-    #     for exp in (8, 9)
-    #     for fac in range(2, 10)
-    # ]
-    # ax.set_yticks(
-    #     [tick for tick in yticks_minor if ylim[0] <= tick <= ylim[1]],
-    #     minor=True
-    # )
-    # ax.tick_params(
-    #     which="minor", left=True, color=ax.get_xgridlines()[0].get_color()
-    # )
 
 grid.fig.savefig("multi-tower-cross-validation-log-error-anova-variations.pdf")
 grid.fig.savefig("multi-tower-cross-validation-log-error-anova-variations.png")
@@ -426,18 +401,6 @@ fig.savefig("multi-tower-cross-validation-error-vs-n-params.png")
 
 ax.set_yscale("log")
 ylim = ax.get_ylim()
-# yticks_minor = [
-#     fac * 10 ** exp
-#     for exp in (8, 9)
-#     for fac in range(2, 10)
-# ]
-# ax.set_yticks(
-#     [tick for tick in yticks_minor if ylim[0] <= tick <= ylim[1]],
-#     minor=True
-# )
-# ax.tick_params(
-#     which="minor", left=True, color=ax.get_ygridlines()[0].get_color()
-# )
 fig.savefig("multi-tower-log-cross-validation-error-vs-n-params.pdf")
 fig.savefig("multi-tower-log-cross-validation-error-vs-n-params.png")
 
