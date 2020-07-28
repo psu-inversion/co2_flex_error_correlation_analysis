@@ -415,8 +415,9 @@ ldesc_ds.to_netcdf("multi-tower-cross-validation-error-summary-1050-splits.nc4",
 
 ############################################################
 # Plot variation in parameter values
-parameter_variation_df = np.abs(
-    ds["optimized_parameters"].reduce(scipy.stats.variation, dim="splits", nan_policy="omit")
+parameter_variation_df = (
+    ds["optimized_parameters"].reduce(scipy.stats.iqr, dim="splits", nan_policy="omit") /
+    np.abs(ds["optimized_parameters"].median("splits"))
 ).to_dataframe().replace({
     "Geostatistical": "Geostat.",
     "Exponential sine-squared": "Exp. sin\N{SUPERSCRIPT TWO}",
@@ -432,7 +433,9 @@ parameter_variation_df[
 ].astype(slot_forms_dtype)
 
 grid = sns.catplot(
-    x="Daily Cycle", y="optimized_parameters", col="Daily Cycle\nModulation", hue="Annual Cycle", data=parameter_variation_df, kind="point", height=4.1, aspect=0.5, ci=None,
+    x="Daily Cycle", y="optimized_parameters", col="Daily Cycle\nModulation",
+    hue="Annual Cycle", data=parameter_variation_df, kind="point",
+    height=4.1, aspect=0.5, ci=None, estimator=np.nanmedian,
     # facet_kws={"subplot_kws": {"yscale": "log"}}
 )
 grid.fig.autofmt_xdate()
@@ -441,7 +444,7 @@ grid.set_titles(
     row_template="{row_var: ^11s}\n{row_name: ^11s}",
     col_template="{col_var: ^11s}\n{col_name: ^11s}"
 )
-grid.axes[0, 0].set_ylabel("Mean Coefficient of Variation\n(unitless)")
+grid.axes[0, 0].set_ylabel("Fractional variation of function parameters\n(unitless)")
 grid.fig.subplots_adjust(top=0.9, left=0.1)
 grid.fig.savefig("multi-tower-cross-validation-coefficient-variation.pdf")
 
