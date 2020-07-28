@@ -159,6 +159,18 @@ for category, site_list in REPRESENTATIVE_DATA_SITES.items():
         )
         plt.close(fig)
 
+multi_corr_fig, multi_corr_axes = plt.subplots(
+    len([
+        site_list[0]
+        for site_list in REPRESENTATIVE_DATA_SITES.values()
+        # for site in site_list
+    ]),
+    1,
+    sharex=True,
+    sharey=True,
+)
+multi_corr_ax_i = 0
+
 ############################################################
 # Plot time series, smoothed time series, and autocovariance
 # Long and short versions of this plot to show different scales
@@ -275,7 +287,77 @@ for category, site_list in REPRESENTATIVE_DATA_SITES.items():
         )
         print(datetime.datetime.now(), "Wrote short png")
         plt.close(fig)
+        ax = multi_corr_axes[multi_corr_ax_i]
+        correlation_data["acf"].plot.line(
+            ax=ax
+        )
+        ax.set_title(site_name)
+        ax.set_ylim(-1, 1)
+        ax.set_xlim(
+            correlation_data.index[[
+                0,
+                int(np.ceil(10 * HOURS_PER_YEAR))
+            ]].astype("i8").astype("f4"),
+        )
+        multi_corr_ax_i += 1
         break
+
+xtick_index = pd.timedelta_range(
+    start=correlation_data.index[0],
+    end=correlation_data.index[int(np.ceil(10 * HOURS_PER_YEAR))],
+    freq="365D",
+)
+for ax in multi_corr_axes.flat:
+    ax.set_xticks(
+        xtick_index.astype("i8").astype("f4"),
+        minor=True
+    )
+    ax.set_xticks(
+        xtick_index.astype("i8").astype("f4")
+    )
+    ax.set_ylabel(
+        "Empirical Autocorrelation\n"
+        "(unitless)"
+    )
+
+ax.set_xticklabels(
+    np.arange(0, len(xtick_index))
+)
+ax.set_xlabel("Time difference (years)")
+multi_corr_fig.tight_layout()
+multi_corr_fig.savefig(
+    "shared-axis-acf-plots-long.pdf"
+)
+
+xtick_index = pd.timedelta_range(
+    start=correlation_data.index[0],
+    end=correlation_data.index[40 * HOURS_PER_DAY],
+    freq="7D",
+)
+xtick_index_minor = pd.timedelta_range(
+    start=correlation_data.index[0],
+    end=correlation_data.index[40 * HOURS_PER_DAY],
+    freq="1D",
+)
+for ax in multi_corr_axes.flat:
+    ax.set_xlim(
+        xtick_index_minor[[0, -1]].astype("i8").astype("f4")
+    )
+    ax.set_xticks(
+        xtick_index_minor.astype("i8").astype("f4"),
+        minor=True
+    )
+    ax.set_xticks(
+        xtick_index.astype("i8").astype("f4")
+    )
+
+ax.set_xticklabels(
+    np.arange(0, len(xtick_index))
+)
+ax.set_xlabel("Time difference (weeks)")
+multi_corr_fig.savefig(
+    "shared-axis-acf-plots-short.pdf"
+)
 
 print("Done climatology plots")
 LONG_DATA_SITES = []
