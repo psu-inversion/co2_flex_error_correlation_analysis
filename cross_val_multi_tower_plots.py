@@ -248,7 +248,7 @@ print(anova_lm(*results))
 
 df_for_plot = df.rename(
     columns={
-        "annual_modulation_of_daily_cycle": "Daily Cycle\nModulation",
+        "annual_modulation_of_daily_cycle": "Annual Modulation\nof Daily Cycle",
         "annual_cycle": "Annual Cycle",
         "daily_cycle": "Daily Cycle",
     }
@@ -257,7 +257,7 @@ df_for_plot = df.rename(
 ############################################################
 # Draw boxplots showing details of distribution
 grid = sns.catplot(
-    x="cross_validation_error", y="Daily Cycle\nModulation",
+    x="cross_validation_error", y="Annual Modulation\nof Daily Cycle",
     row="Daily Cycle", col="Annual Cycle",
     data=df_for_plot, height=1.7, aspect=1.7,
     margin_titles=True, kind="box",
@@ -289,6 +289,52 @@ for ax in grid.axes.flat:
 
 grid.fig.savefig("multi-tower-log-cross-validation-error-by-function.pdf")
 grid.fig.savefig("multi-tower-log-cross-validation-error-by-function.png")
+
+############################################################
+# Draw boxplots showing details of distribution for best functions
+low_cv_err = df_for_plot["cross_validation_error"].groupby(
+    "correlation_function"
+).mean() < 3e8
+df_for_best_plot = df_for_plot.loc[(low_cv_err.index[low_cv_err.values], slice(None)), :]
+for slot_var in ("Daily Cycle", "Annual Cycle", "Annual Modulation\nof Daily Cycle"):
+    df_for_best_plot[slot_var] = pd.Categorical(
+        df_for_best_plot[slot_var],
+    ).remove_unused_categories()
+
+
+grid = sns.catplot(
+    x="cross_validation_error", y="Annual Modulation\nof Daily Cycle",
+    row="Daily Cycle", col="Annual Cycle",
+    data=df_for_best_plot, height=1.7, aspect=1.7,
+    margin_titles=True, kind="box",
+    sharex=True, sharey=True,
+    showmeans=True,
+    meanprops={"markerfacecolor": "white",
+               "markeredgecolor": "k"},
+)
+
+for ax in grid.axes[:, -1]:
+    for child in ax.get_children():
+        if isinstance(child, plt.Text):
+            child.set_visible(False)
+
+grid.axes[0, -1].set_title("", visible=True)
+grid.axes[0, 0].set_xlim(0, None)
+grid.set_titles(
+    row_template="{row_var: ^11s}\n{row_name: ^11s}",
+    col_template="{col_var: ^11s}\n{col_name: ^11s}"
+)
+grid.set_xlabels("Cross-Validation\nError")
+grid.fig.tight_layout()
+grid.fig.savefig("multi-tower-cross-validation-best-error-by-function.pdf")
+grid.fig.savefig("multi-tower-cross-validation-best-error-by-function.png")
+
+for ax in grid.axes.flat:
+    ax.set_xscale("log")
+    ax.set_xlim(0.08e9, 4e9)
+
+grid.fig.savefig("multi-tower-log-cross-validation-best-error-by-function.pdf")
+grid.fig.savefig("multi-tower-log-cross-validation-best-error-by-function.png")
 
 ############################################################
 # Sorted box plots
@@ -344,7 +390,7 @@ fig.savefig("multi-tower-cross-validation-error-sorted-wide.png")
 grid = sns.catplot(
     x="Daily Cycle",
     y="cross_validation_error",
-    col="Daily Cycle\nModulation",
+    col="Annual Modulation\nof Daily Cycle",
     hue="Annual Cycle",
     data=df_for_plot,
     kind="point",
@@ -354,7 +400,7 @@ grid = sns.catplot(
     aspect=0.5
 )
 grid.fig.autofmt_xdate()
-grid.axes[0, 0].set_ylabel("Mean Cross-Validation Error (unitless)")
+grid.axes[0, 0].set_ylabel("Mean Cross-Validation Error\n(unitless; lower is better)")
 grid.set_titles(
     row_template="{row_var: ^11s}\n{row_name: ^11s}",
     col_template="{col_var: ^11s}\n{col_name: ^11s}"
@@ -364,6 +410,32 @@ for ax in grid.axes[0, :]:
 
 grid.fig.savefig("multi-tower-cross-validation-log-error-anova-variations.pdf")
 grid.fig.savefig("multi-tower-cross-validation-log-error-anova-variations.png")
+
+############################################################
+# Compare best means with CIs
+grid = sns.catplot(
+    x="Daily Cycle",
+    y="cross_validation_error",
+    col="Annual Modulation\nof Daily Cycle",
+    hue="Annual Cycle",
+    data=df_for_best_plot,
+    kind="point",
+    # facet_kws={"subplot_kws": {"yscale": "log"}},
+    capsize=0.4,
+    height=4.1,
+    aspect=0.5
+)
+grid.fig.autofmt_xdate()
+grid.axes[0, 0].set_ylabel("Mean Cross-Validation Error\n(unitless; lower is better)")
+grid.set_titles(
+    row_template="{row_var: ^11s}\n{row_name: ^11s}",
+    col_template="{col_var: ^11s}\n{col_name: ^11s}"
+)
+for ax in grid.axes[0, :]:
+    ylim = grid.axes[0, 0].get_ylim()
+
+grid.fig.savefig("multi-tower-cross-validation-best-error-anova-variations.pdf")
+grid.fig.savefig("multi-tower-cross-validation-best-error-anova-variations.png")
 
 ############################################################
 # Calculate summary statistics
@@ -394,7 +466,7 @@ ax.plot(
     mean_error_by_parameters.idxmin(),
     mean_error_by_parameters.min(), "ro"
 )
-ax.set_ylabel("Mean Cross-Validation Error")
+ax.set_ylabel("Mean Cross-Validation Error\n(unitless; lower is better)")
 ax.set_xlabel("Number of Parameters")
 fig.tight_layout()
 fig.savefig("multi-tower-cross-validation-error-vs-n-params.pdf")
@@ -425,32 +497,32 @@ parameter_variation_df = (
     "3-term cosine series": "Cosines"
 }).rename(
     columns={
-        "annual_modulation_of_daily_cycle": "Daily Cycle\nModulation",
+        "annual_modulation_of_daily_cycle": "Annual Modulation\nof Daily Cycle",
         "annual_cycle": "Annual Cycle",
         "daily_cycle": "Daily Cycle"
     }
 )
 
 parameter_variation_df[
-    ["Daily Cycle", "Daily Cycle\nModulation", "Annual Cycle"]
+    ["Daily Cycle", "Annual Modulation\nof Daily Cycle", "Annual Cycle"]
 ] = parameter_variation_df[
-    ["Daily Cycle", "Daily Cycle\nModulation", "Annual Cycle"]
+    ["Daily Cycle", "Annual Modulation\nof Daily Cycle", "Annual Cycle"]
 ].astype(slot_forms_dtype)
 
 grid = sns.catplot(
-    x="Daily Cycle", y="optimized_parameters", col="Daily Cycle\nModulation",
+    x="Daily Cycle", y="optimized_parameters", col="Annual Modulation\nof Daily Cycle",
     hue="Annual Cycle", data=parameter_variation_df, kind="point",
     height=4.1, aspect=0.5, ci=None, estimator=np.nanmedian,
     # facet_kws={"subplot_kws": {"yscale": "log"}}
 )
 grid.fig.autofmt_xdate()
-grid.axes[0, 0].set_ylim(0, 2)
+grid.axes[0, 0].set_ylim(0, 1)
 grid.set_titles(
     row_template="{row_var: ^11s}\n{row_name: ^11s}",
     col_template="{col_var: ^11s}\n{col_name: ^11s}"
 )
-grid.axes[0, 0].set_ylabel("Fractional variation of function parameters\n(unitless)")
-grid.fig.subplots_adjust(top=0.9, left=0.1)
+grid.axes[0, 0].set_ylabel("Fractional variation of function parameters\n(unitless; lower is better)")
+grid.fig.subplots_adjust(top=0.85, left=0.1)
 grid.fig.savefig("multi-tower-cross-validation-coefficient-variation.pdf")
 
 plt.pause(1)

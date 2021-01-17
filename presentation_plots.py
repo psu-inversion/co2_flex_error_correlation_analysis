@@ -6,7 +6,9 @@ from __future__ import print_function, division
 import calendar
 import datetime
 
+import cycler
 import numpy as np
+import matplotlib as mpl
 import matplotlib.pyplot as plt
 import pandas as pd
 import xarray
@@ -17,6 +19,9 @@ import cartopy.feature as cfeat
 import correlation_utils
 import flux_correlation_function_fits
 import correlation_function_fits
+
+from pandas.plotting import register_matplotlib_converters
+register_matplotlib_converters()
 
 ############################################################
 # Define constants for script
@@ -58,9 +63,16 @@ MATCHED_DATA_MONTH_DS = xarray.open_dataset(
     "ameriflux-and-casa-all-towers-seasonal-cycle.nc4"
 ).load()
 
+seasonal_fig, seasonal_axes = plt.subplots(
+    len(REPRESENTATIVE_DATA_SITES),
+    1,
+    sharex=True,
+    sharey=True,
+)
+
 ############################################################
 # Produce the plots
-for category, site_list in REPRESENTATIVE_DATA_SITES.items():
+for cat_i, (category, site_list) in enumerate(REPRESENTATIVE_DATA_SITES.items()):
     print(category)
     all_site_data = MATCHED_DATA_DS.sel(
         site=site_list
@@ -92,7 +104,7 @@ for category, site_list in REPRESENTATIVE_DATA_SITES.items():
     # Plot seasonal cycle for the sites
     fig, axes = plt.subplots(3, 1, sharex=True)
     month_numbers = np.arange(12) + 1
-    for ax, site_name in zip(axes, site_list):
+    for site_i, (ax, site_name) in enumerate(zip(axes, site_list)):
         site_data = MATCHED_DATA_MONTH_DS.sel(
             site=site_name
         ).load()
@@ -103,6 +115,20 @@ for category, site_list in REPRESENTATIVE_DATA_SITES.items():
         casa_line, = ax.plot(
             month_numbers, site_data["casa_fluxes"], label="CASA"
         )
+        if site_i == 0:
+            seasonal_axes[cat_i].set_title(site_name)
+            ameriflux_line, = seasonal_axes[cat_i].plot(
+                month_numbers, site_data["ameriflux_fluxes"], label="AmeriFlux"
+            )
+            casa_line, = seasonal_axes[cat_i].plot(
+                month_numbers, site_data["casa_fluxes"], label="CASA"
+            )
+            seasonal_axes[cat_i].set_ylabel(
+                "NEE (\N{MICRO SIGN}mol/m\N{SUPERSCRIPT TWO}/s)"
+            )
+            seasonal_fig.legend(
+                [ameriflux_line, casa_line], ["AmeriFlux", "CASA"], ncol=2
+            )
     for ax in axes:
         ax.set_ylabel("NEE (\N{MICRO SIGN}mol/m\N{SUPERSCRIPT TWO}/s)")
     axes[2].set_xlabel("Month")
@@ -159,6 +185,9 @@ for category, site_list in REPRESENTATIVE_DATA_SITES.items():
         )
         plt.close(fig)
 
+seasonal_fig.savefig("combined-categories-flux-monthly-climatology.pdf")
+plt.close(seasonal_fig)
+
 multi_corr_fig, multi_corr_axes = plt.subplots(
     len([
         site_list[0]
@@ -168,8 +197,36 @@ multi_corr_fig, multi_corr_axes = plt.subplots(
     1,
     sharex=True,
     sharey=True,
+    figsize=(6.5, 4.5)
 )
 multi_corr_ax_i = 0
+
+multi_spectrum_day_fig, multi_spectrum_day_axes = plt.subplots(
+    len([
+        site_list[0]
+        for site_list in REPRESENTATIVE_DATA_SITES.values()
+        # for site in site_list
+    ]),
+    1,
+    sharex=True,
+    sharey=True,
+    figsize=(6.5, 4.5)
+)
+multi_spectrum_ax_i = 0
+
+multi_spectrum_year_fig, multi_spectrum_year_axes = plt.subplots(
+    len([
+        site_list[0]
+        for site_list in REPRESENTATIVE_DATA_SITES.values()
+        # for site in site_list
+    ]),
+    1,
+    sharex=True,
+    sharey=True,
+    figsize=(6.5, 4.5)
+)
+multi_spectrum_ax_i = 0
+
 
 ############################################################
 # Plot time series, smoothed time series, and autocovariance
@@ -288,7 +345,7 @@ for category, site_list in REPRESENTATIVE_DATA_SITES.items():
         print(datetime.datetime.now(), "Wrote short png")
         plt.close(fig)
         ax = multi_corr_axes[multi_corr_ax_i]
-        correlation_data["acf"].plot.line(
+        correlation_data["acf"].rename("Empirical").plot.line(
             ax=ax
         )
         ax.set_title(site_name)
@@ -300,6 +357,27 @@ for category, site_list in REPRESENTATIVE_DATA_SITES.items():
             ]].astype("i8").astype("f4"),
         )
         multi_corr_ax_i += 1
+        ax = multi_spectrum_day_axes[multi_spectrum_ax_i]
+        ax.plot(
+            np.fft.rfftfreq(len(correlation_data), 1./HOURS_PER_DAY),
+            abs(np.fft.ihfft(correlation_data["acf"])) ** 2,
+        )
+        ax.set_ylabel("Spectrum\n(unitless)")
+        ax.set_title(site_name)
+        ax.set_xlim(0, 6)
+        ax.set_xlabel("Frequency (1/day)")
+        ax.set_yscale("log")
+        ax = multi_spectrum_year_axes[multi_spectrum_ax_i]
+        ax.plot(
+            np.fft.rfftfreq(len(correlation_data), 1./HOURS_PER_YEAR),
+            abs(np.fft.ihfft(correlation_data["acf"])) ** 2,
+        )
+        ax.set_ylabel("Spectrum\n(unitless)")
+        ax.set_title(site_name)
+        ax.set_xlim(0, 12)
+        ax.set_xlabel("Frequency (1/year)")
+        ax.set_yscale("log")
+        multi_spectrum_ax_i += 1
         break
 
 xtick_index = pd.timedelta_range(
@@ -328,6 +406,113 @@ multi_corr_fig.tight_layout()
 multi_corr_fig.savefig(
     "shared-axis-acf-plots-long.pdf"
 )
+multi_corr_fig.savefig(
+    "shared-axis-acf-plots-long.png",
+    dpi=300
+)
+
+# read the coefficients from the fit summary file
+COEF_DATA = xarray.open_dataset("multi-tower-cross-validation-error-data-1050-splits.nc4")
+MEAN_COEFFICIENTS = COEF_DATA.data_vars["optimized_parameters"].set_index(
+    correlation_function="correlation_function_short_name"
+).sel(correlation_function=["dc_dmc_ap", "dp_dmc_a0"]).mean("splits")
+# Correlation functions expect time deltas in units of days
+CORRELATION_TIMES = correlation_data.index.values.astype("m8[h]").astype("i8").astype("f4") / 24
+CORRELATIONS = {
+    "Best overall function":
+    flux_correlation_function_fits.dc_dmc_ap_curve_ne(
+        CORRELATION_TIMES,
+        **MEAN_COEFFICIENTS.sel(
+            correlation_function="dc_dmc_ap"
+        ).to_series().dropna().to_dict(),
+    ),
+    "Best function w/o ann. cycle":
+    flux_correlation_function_fits.dp_dmc_a0_curve_ne(
+        CORRELATION_TIMES,
+        **MEAN_COEFFICIENTS.sel(
+            correlation_function="dp_dmc_a0"
+        ).to_series().dropna().to_dict(),
+    ),
+}
+
+with mpl.rc_context(
+        {
+            "axes.prop_cycle":
+            mpl.rcParams["axes.prop_cycle"][:4] +
+            cycler.cycler("linestyle", ["-", "--", ":", "-."])
+        }
+):
+    # Plot the modeled correlations
+    MODELED_CORRELATION_LINES = []
+    for ax in multi_corr_axes.flat:
+        for label, modeled_corr in CORRELATIONS.items():
+            MODELED_CORRELATION_LINES.extend(
+                ax.plot(
+                    correlation_data.index.values,
+                    modeled_corr,
+                    alpha=0.6,
+                    label=label
+                )
+            )
+
+modeled_acf_legend = multi_corr_axes.flat[0].legend(ncol=2)
+
+# Save the new plots
+multi_corr_fig.savefig(
+    "shared-axis-modeled-acf-plots-long.pdf"
+)
+multi_corr_fig.savefig(
+    "shared-axis-modeled-acf-plots-long.png",
+    dpi=300
+)
+
+multi_spectrum_day_axes[0].set_xlabel("")
+multi_spectrum_day_fig.tight_layout()
+multi_spectrum_day_fig.savefig(
+    "shared-axis-spectrum-plots-day-full.pdf"
+)
+multi_spectrum_day_fig.savefig(
+    "shared-axis-spectrum-plots-day-full.png",
+    dpi=300
+)
+
+for ax in multi_spectrum_day_axes:
+    ax.set_xlim(
+        1 - 5. / DAYS_PER_YEAR,
+        1 + 5. / DAYS_PER_YEAR
+    )
+
+multi_spectrum_day_fig.savefig(
+    "shared-axis-spectrum-plots-day-zoom.pdf"
+)
+multi_spectrum_day_fig.savefig(
+    "shared-axis-spectrum-plots-day-zoom.png",
+    dpi=300
+)
+
+multi_spectrum_year_axes[0].set_xlabel("")
+multi_spectrum_year_fig.tight_layout()
+multi_spectrum_year_fig.savefig(
+    "shared-axis-spectrum-plots-year-full.pdf"
+)
+multi_spectrum_year_fig.savefig(
+    "shared-axis-spectrum-plots-year-full.png",
+    dpi=300
+)
+
+for ax in multi_spectrum_year_axes:
+    ax.set_xlim(
+        1 - 0.5,
+        1 + 0.5
+    )
+
+multi_spectrum_year_fig.savefig(
+    "shared-axis-spectrum-plots-year-zoom.pdf"
+)
+multi_spectrum_year_fig.savefig(
+    "shared-axis-spectrum-plots-year-zoom.png",
+    dpi=300
+)
 
 xtick_index = pd.timedelta_range(
     start=correlation_data.index[0],
@@ -355,8 +540,29 @@ ax.set_xticklabels(
     np.arange(0, len(xtick_index))
 )
 ax.set_xlabel("Time difference (weeks)")
+
+# Save version with modeled ACFs
+multi_corr_fig.savefig(
+    "shared-axis-modeled-acf-plots-short.pdf"
+)
+multi_corr_fig.savefig(
+    "shared-axis-modeled-acf-plots-short.png",
+    dpi=300
+)
+
+# Remove the modeled correlations
+for line in MODELED_CORRELATION_LINES:
+    line.set_visible(False)
+
+modeled_acf_legend.set_visible(False)
+
+# And plot just the empirical autocorrelations again
 multi_corr_fig.savefig(
     "shared-axis-acf-plots-short.pdf"
+)
+multi_corr_fig.savefig(
+    "shared-axis-acf-plots-short.png",
+    dpi=300
 )
 
 print("Done climatology plots")
@@ -386,6 +592,7 @@ LONG_DATA_LATITUDES = MATCHED_DATA_DS.coords["Latitude"].sel(
     site=LONG_DATA_SITES
 )
 
+print(len(LONG_DATA_SITES), "towers with long data")
 fig, ax = plt.subplots(1, 1, subplot_kw={"projection": ccrs.PlateCarree()})
 ax.plot(LONG_DATA_LONGITUDES, LONG_DATA_LATITUDES, ".")
 ax.coastlines()

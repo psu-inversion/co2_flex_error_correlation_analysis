@@ -117,13 +117,27 @@ for axes_row, part_form in zip(
         ax.set_xlim(0, DAYS_PER_YEAR)
         ax.set_xticks(np.arange(0, DAYS_PER_YEAR + EPS, 3))
         ax.set_xticks(np.arange(0, DAYS_PER_YEAR + EPS, 1), minor=True)
+        ax.text(
+            3, -0.8,
+            "{:s}$_{{{:s}}}$".format(
+                (
+                    func_part.name[0]
+                    if not func_part.is_modulation() else
+                    func_part.name
+                ).lower(),
+                part_form.name.lower()
+            ),
+            horizontalalignment="center",
+            verticalalignment="bottom",
+            bbox={"facecolor": "white"},
+        )
 
 for ax, part_form in zip(axes[:, 0], PART_FORMS):
     ax.set_ylabel(textwrap.fill(part_form.value, 14))
 
 for ax, func_part in zip(
         axes[0, :],
-        ("Daily Cycle", "Modulation\nof Daily Cycle", "Annual Cycle")
+        ("Daily Cycle ($d_i$)", "Annual Modulation\nof Daily Cycle ($dm_i$)", "Annual Cycle ($a_i$)")
 ):
     ax.set_title(func_part)
 
