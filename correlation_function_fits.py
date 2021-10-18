@@ -4,22 +4,20 @@
 
 I need to find a function that fits all towers decently.
 """
-from __future__ import print_function, division
+from __future__ import division, print_function
 
-from enum import Enum
-from math import pi
 import collections
 import itertools
-import operator
-import pprint
+from enum import Enum
+from math import pi
 
 import numpy as np
 
-HOURS_PER_DAY=24
-DAYS_PER_DAY=1
-DAYS_PER_WEEK=7
+HOURS_PER_DAY = 24
+DAYS_PER_DAY = 1
+DAYS_PER_WEEK = 7
 DAYS_PER_FORTNIGHT = 14
-DAYS_PER_YEAR=365.2425
+DAYS_PER_YEAR = 365.2425
 DAYS_PER_DECADE = 10 * DAYS_PER_YEAR
 
 GLOBAL_DICT = dict(
@@ -86,7 +84,12 @@ class CorrelationPart(Enum):
         return self.name[0].lower()
 
 
-assert list(CorrelationPart) == [CorrelationPart.DAILY, CorrelationPart.DM, CorrelationPart.ANN]
+assert list(CorrelationPart) == [
+    CorrelationPart.DAILY,
+    CorrelationPart.DM,
+    CorrelationPart.ANN,
+]
+
 
 class PartForm(Enum):
     """Describe one part of a correlation function."""
@@ -159,13 +162,13 @@ class PartForm(Enum):
                 "{0:s}_coef2 * cos(FOUR_PI_OVER_{time:s} * tdata))"
             )
         elif self == PartForm.PERIODIC:
-            main = (
-                "exp(-(sin(PI_OVER_{time:s} * tdata) / {0:s}_width) ** 2)"
-            )
+            main = "exp(-(sin(PI_OVER_{time:s} * tdata) / {0:s}_width) ** 2)"
         elif self == PartForm.GEOSTAT:
             main = (
-                "where(((tdata / DAYS_PER_{time:s}) % 1) < 0.125, 1 - 8 * ((tdata / DAYS_PER_{time:s}) % 1), "
-                "where(((tdata / DAYS_PER_{time:s}) % 1) > 0.875, 8 * ((tdata / DAYS_PER_{time:s}) % 1 - 0.875), 0))"
+                "where(((tdata / DAYS_PER_{time:s}) % 1) < 0.125, "
+                "1 - 8 * ((tdata / DAYS_PER_{time:s}) % 1), "
+                "where(((tdata / DAYS_PER_{time:s}) % 1) > 0.875, "
+                "8 * ((tdata / DAYS_PER_{time:s}) % 1 - 0.875), 0))"
             )
 
         if not part.is_modulation():
@@ -219,17 +222,17 @@ class PartForm(Enum):
                 "(-1 + cos(FOUR_PI_OVER_{time:s} * tdata))",
             ]
         elif self == PartForm.PERIODIC:
-            main = (
-                "exp(-(sin(PI_OVER_{time:s} * tdata) / {0:s}_width) ** 2)"
-            )
+            main = "exp(-(sin(PI_OVER_{time:s} * tdata) / {0:s}_width) ** 2)"
             main_parts = [
                 "exp(-(sin(PI_OVER_{time:s} * tdata) / {0:s}_width) ** 2) * "
                 "2 * sin(PI_OVER_{time:s} * tdata) ** 2 / {0:s}_width ** 3",
             ]
         elif self == PartForm.GEOSTAT:
             main = (
-                "where(((tdata / DAYS_PER_{time:s}) % 1) < 0.125, 1 - 8 * ((tdata / DAYS_PER_{time:s}) % 1), "
-                "where(((tdata / DAYS_PER_{time:s}) % 1) > 0.875, 8 * ((tdata / DAYS_PER_{time:s}) % 1 - 0.875), 0))"
+                "where(((tdata / DAYS_PER_{time:s}) % 1) < 0.125, "
+                "1 - 8 * ((tdata / DAYS_PER_{time:s}) % 1), "
+                "where(((tdata / DAYS_PER_{time:s}) % 1) > 0.875, "
+                "8 * ((tdata / DAYS_PER_{time:s}) % 1 - 0.875), 0))"
             )
             main_parts = []
 
@@ -278,6 +281,7 @@ def is_valid_combination(part_daily, part_day_mod, part_annual):
         return False
     return True
 
+
 def get_full_expression(part_daily, part_day_mod, part_annual):
     """Get the full expression with the given parts.
 
@@ -311,6 +315,7 @@ def get_full_expression(part_daily, part_day_mod, part_annual):
         part_annual.get_expression(CorrelationPart.ANNUAL),
     )
 
+
 def get_full_parameter_list(part_daily, part_day_mod, part_annual):
     """Get the full parameter list for the given expression.
 
@@ -328,13 +333,17 @@ def get_full_parameter_list(part_daily, part_day_mod, part_annual):
         param
         for form, time in zip(
             (part_daily, part_day_mod, part_annual),
-            (CorrelationPart.DAILY, CorrelationPart.DAILY_MODULATION,
-             CorrelationPart.ANNUAL),
+            (
+                CorrelationPart.DAILY,
+                CorrelationPart.DAILY_MODULATION,
+                CorrelationPart.ANNUAL,
+            ),
         )
         for param in form.get_parameters(time)
     ]
     result.extend(["resid_coef", "resid_timescale", "ec_coef", "ec_timescale"])
     return result
+
 
 def get_weighted_fit_expression(part_daily, part_day_mod, part_annual):
     """Get the full expression with the given parts.
@@ -361,9 +370,8 @@ def get_weighted_fit_expression(part_daily, part_day_mod, part_annual):
     expression: str
 
     """
-    return (
-        "sum(num_pairs * (empirical_correlogram - ({0:s})) ** 2)"
-        .format(get_full_expression(part_daily, part_day_mod, part_annual))
+    return "sum(num_pairs * (empirical_correlogram - ({0:s})) ** 2)".format(
+        get_full_expression(part_daily, part_day_mod, part_annual)
     )
 
 
@@ -380,11 +388,10 @@ if __name__ == "__main__":
     print("Reading correlation data", flush=True)
     corr_data1 = pd.read_csv(
         "ameriflux-minus-casa-half-hour-towers-autocorrelation-functions.csv",
-        index_col=0
+        index_col=0,
     )
     corr_data2 = pd.read_csv(
-        "ameriflux-minus-casa-hour-towers-autocorrelation-functions.csv",
-        index_col=0
+        "ameriflux-minus-casa-hour-towers-autocorrelation-functions.csv", index_col=0
     )
     corr_data = pd.concat([corr_data1, corr_data2], axis=1)
     corr_data.index = pd.TimedeltaIndex(corr_data.index)
@@ -393,12 +400,10 @@ if __name__ == "__main__":
     print("Have correlation data", flush=True)
 
     pair_counts1 = pd.read_csv(
-        "ameriflux-minus-casa-half-hour-towers-pair-counts.csv",
-        index_col=0
+        "ameriflux-minus-casa-half-hour-towers-pair-counts.csv", index_col=0
     )
     pair_counts2 = pd.read_csv(
-        "ameriflux-minus-casa-hour-towers-pair-counts.csv",
-        index_col=0
+        "ameriflux-minus-casa-hour-towers-pair-counts.csv", index_col=0
     )
     pair_counts = pd.concat([pair_counts1, pair_counts2], axis=1)
     pair_counts.index = pd.TimedeltaIndex(pair_counts.index)
@@ -415,39 +420,38 @@ if __name__ == "__main__":
 
     for tower in amf_sites:
         num_pairs = pair_counts.loc[:, tower].dropna()
-        tdata = tower_lags[:len(num_pairs)]
+        tdata = tower_lags[: len(num_pairs)]
         tdata = tdata[num_pairs > 0]
         num_pairs = num_pairs[num_pairs > 0]
         empirical_correlogram = corr_data.loc[num_pairs.index, tower]
         fit_quality = {}
         for form_daily, form_day_mod, form_annual in itertools.product(
-                PartForm, PartForm, PartForm
+            PartForm, PartForm, PartForm
         ):
             if not is_valid_combination(form_daily, form_day_mod, form_annual):
                 continue
             try:
-                tower_coefficients = dict(coef_data.loc[
-                    (
-                        tower,
-                        "d{0:s}_dm{1:s}_a{2:s}_numexpr_fn".format(
-                            form_daily.get_short_name(),
-                            form_day_mod.get_short_name(),
-                            form_annual.get_short_name(),
+                tower_coefficients = dict(
+                    coef_data.loc[
+                        (
+                            tower,
+                            "d{0:s}_dm{1:s}_a{2:s}_numexpr_fn".format(
+                                form_daily.get_short_name(),
+                                form_day_mod.get_short_name(),
+                                form_annual.get_short_name(),
+                            ),
                         ),
-                    ),
-                    :
-                ].dropna())
+                        :,
+                    ].dropna()
+                )
             except KeyError:
                 # Fit crashed, or not enough data for me to be
                 # comfortable fitting it.
                 continue
             for newname, oldname in zip(
-                    ("daily", "ann", "resid", "ec"),
-                    ("Td", "Ta", "To", "Tec")
+                ("daily", "ann", "resid", "ec"), ("Td", "Ta", "To", "Tec")
             ):
-                tower_coefficients[newname + "_timescale"] = (
-                    tower_coefficients[oldname]
-                )
+                tower_coefficients[newname + "_timescale"] = tower_coefficients[oldname]
             local_dict = tower_coefficients.copy()
             local_dict["num_pairs"] = num_pairs
             local_dict["tdata"] = tdata
@@ -455,18 +459,16 @@ if __name__ == "__main__":
             fit_quality[form_daily, form_day_mod, form_annual] = ne.evaluate(
                 get_weighted_fit_expression(form_daily, form_day_mod, form_annual),
                 local_dict=local_dict,
-                global_dict=GLOBAL_DICT
+                global_dict=GLOBAL_DICT,
             )
-        sorted_fits = sorted(
-            list(fit_quality.keys()),
-            key=fit_quality.__getitem__
-        )
+        sorted_fits = sorted(list(fit_quality.keys()), key=fit_quality.__getitem__)
         topk_fits[tower] = sorted_fits[:TOPK]
         print(
             tower,
-            ["d{0:s}_dm{1:s}_a{2:s}".format(
-                *[form.get_short_name() for form in fun]
-            ) for fun in sorted_fits[:TOPK]],
+            [
+                "d{0:s}_dm{1:s}_a{2:s}".format(*[form.get_short_name() for form in fun])
+                for fun in sorted_fits[:TOPK]
+            ],
             np.array(
                 [fit_quality[fun] for fun in sorted_fits[:TOPK]],
                 dtype=np.float32,
@@ -482,9 +484,9 @@ if __name__ == "__main__":
                 *[form.get_short_name() for form in fun]
             ),
             "\tCount in top {0:d}:".format(TOPK),
-            count
+            count,
         )
-            
+
 
 ### TOPK = 1
 # Number of towers: 69

@@ -1,10 +1,10 @@
 # ~*~ coding: utf8 ~*~
 """Utilities for correlations."""
-from __future__ import print_function, division
+from __future__ import division, print_function
 
 import numpy as np
 import pandas as pd
-from statsmodels.tsa.stattools import acovf, acf
+from statsmodels.tsa.stattools import acf, acovf
 
 
 def count_pairs(col):
@@ -17,15 +17,21 @@ def count_pairs(col):
     Returns
     -------
     n_pairs: np.ndarray
+
+    References
+    ----------
+    Marcotte, Denis. 1996. "Fast Variogram Computation with FFT."
+    Computers & Geosciences 22 (10): 1175-86.
+    :doi:`10.1016/S0098-3004(96)00026-X`.
     """
     have_data = ~col.isnull()
     n_data = len(col)
     embedded = np.zeros(2 * n_data - 1)
     embedded[:n_data] = have_data
     spectrum = np.fft.fft(embedded)
-    pair_count = np.round(
-        np.fft.ifft(spectrum.conj() * spectrum, n_data).real
-    ).astype(int)
+    pair_count = np.round(np.fft.ifft(spectrum.conj() * spectrum, n_data).real).astype(
+        int
+    )
     return pair_count
 
 
@@ -45,14 +51,15 @@ def get_autocorrelation_stats(column):
     column = column.dropna().resample(column.index.freq).mean()
     time_index = column.index
     n_lags = len(column.index)
-    timedelta_index = pd.timedelta_range(
-        start=0, freq=time_index.freq, periods=n_lags
-    )
+    timedelta_index = pd.timedelta_range(start=0, freq=time_index.freq, periods=n_lags)
     result = pd.DataFrame(
         index=timedelta_index, columns=["acf", "acovf", "pair_counts"]
     )
     result.loc[:, "acovf"] = acovf(
-        column, missing="conservative", unbiased=True, fft=True,
+        column,
+        missing="conservative",
+        unbiased=True,
+        fft=True,
     ).astype(np.float32)
     result.loc[:, "acf"] = acf(
         column, missing="conservative", nlags=n_lags, unbiased=True, fft=True
