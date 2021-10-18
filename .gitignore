@@ -29,3 +29,7 @@ build
 
 # Linter
 *_flymake.py
+
+# Packaging stuff
+*.egg-info
+/dist/
