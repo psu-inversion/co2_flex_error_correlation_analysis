@@ -1,15 +1,16 @@
 """Write all possible correlation functions given parts."""
-from __future__ import print_function, division
+from __future__ import division, print_function
+
 import itertools
 
-import numpy as np
-import numexpr as ne
 import bottleneck as bn
+import numexpr as ne
+import numpy as np
 
-HOURS_PER_DAY = 24.
-DAYS_PER_DAY = 1.
-DAYS_PER_WEEK = 7.
-DAYS_PER_FORTNIGHT = 14.
+HOURS_PER_DAY = 24.0
+DAYS_PER_DAY = 1.0
+DAYS_PER_WEEK = 7.0
+DAYS_PER_FORTNIGHT = 14.0
 DAYS_PER_YEAR = 365.2425
 DAYS_PER_DECADE = 10 * DAYS_PER_YEAR
 
@@ -175,9 +176,11 @@ def {function_name:s}(
 NUMEXPR_WEIGHTING_SCRIPT = "sum(pair_count * ({function:s} - corr_data) ** 2)"
 
 OUT_FILE_NAME = "flux_correlation_functions.pyx"
-with open(OUT_FILE_NAME, "w") as out_file, \
-     open(OUT_FILE_NAME.replace(".pyx", "_py.py"), "w") as out_file_py:
-    out_file.write("""# cython: embedsignature=True
+with open(OUT_FILE_NAME, "w") as out_file, open(
+    OUT_FILE_NAME.replace(".pyx", "_py.py"), "w"
+) as out_file_py:
+    out_file.write(
+        """# cython: embedsignature=True
 # cython: language_level=3str
 from libc cimport math
 
@@ -244,8 +247,10 @@ cdef dict GLOBAL_DICT = {
     "TWO_PI_OVER_YEAR": TWO_PI_OVER_YEAR,
     "FOUR_PI_OVER_YEAR": FOUR_PI_OVER_YEAR,
 }
-""")
-    out_file_py.write("""
+"""
+    )
+    out_file_py.write(
+        """
 import numpy as np
 import numexpr
 
@@ -279,11 +284,12 @@ GLOBAL_DICT = {
     "TWO_PI_OVER_YEAR": TWO_PI_OVER_YEAR,
     "FOUR_PI_OVER_YEAR": FOUR_PI_OVER_YEAR,
 }
-""")
+"""
+    )
     for d_fn_i, dm_fn_i, ann_fn_i in itertools.product(
-            range(N_CORRELATION_FUNCTIONS),
-            range(N_CORRELATION_FUNCTIONS),
-            range(N_CORRELATION_FUNCTIONS),
+        range(N_CORRELATION_FUNCTIONS),
+        range(N_CORRELATION_FUNCTIONS),
+        range(N_CORRELATION_FUNCTIONS),
     ):
         if d_fn_i == 0 and dm_fn_i != 0:
             # Daily modulation without daily cycle is silly
@@ -298,68 +304,59 @@ GLOBAL_DICT = {
             COEFFICIENTS[indices[i]].format(part=PARTS_FOR_VAR[i])
             for i in range(len(PARTS_FOR_VAR))
         ]
-        parameters = ", ".join(
-            [params for params in parameter_list
-             if params != ""]
-        )
+        parameters = ", ".join([params for params in parameter_list if params != ""])
         if parameters != "":
             parameters += ","
         numpy_function = NUMPY_FUNCTION_SCRIPT.format(
             function_name=function_name + "_numpy",
             parameters=parameters,
-            daily_form=FORM_STRING[d_fn_i].format(
-                part="daily", time="DAY"
-            ),
+            daily_form=FORM_STRING[d_fn_i].format(part="daily", time="DAY"),
             daily_modulation_form=(
                 # No modulation is times one, not times zero
-                FORM_STRING[dm_fn_i] if dm_fn_i != 0 else "1"
+                FORM_STRING[dm_fn_i]
+                if dm_fn_i != 0
+                else "1"
             ).format(part="dm", time="YEAR"),
-            annual_form=FORM_STRING[ann_fn_i].format(
-                part="ann", time="YEAR"
-            ),
+            annual_form=FORM_STRING[ann_fn_i].format(part="ann", time="YEAR"),
         )
         print(numpy_function, file=out_file)
         nonumpy_function = NONUMPY_FUNCTION_SCRIPT.format(
             function_name=function_name + "_loop",
             parameters=parameters,
-            daily_form=FORM_STRING[d_fn_i].format(
-                part="daily", time="DAY"
-            ),
+            daily_form=FORM_STRING[d_fn_i].format(part="daily", time="DAY"),
             daily_modulation_form=(
                 # No modulation is times one, not times zero
-                FORM_STRING[dm_fn_i] if dm_fn_i != 0 else "1"
+                FORM_STRING[dm_fn_i]
+                if dm_fn_i != 0
+                else "1"
             ).format(part="dm", time="YEAR"),
-            annual_form=FORM_STRING[ann_fn_i].format(
-                part="ann", time="YEAR"
-            ),
+            annual_form=FORM_STRING[ann_fn_i].format(part="ann", time="YEAR"),
         )
         print(nonumpy_function, file=out_file)
         numexpr_expr = NUMEXPR_EXPRESSION_SCRIPT.format(
             function_name=function_name + "_numexpr",
             parameters=parameters,
-            daily_form=FORM_STRING[d_fn_i].format(
-                part="daily", time="DAY"
-            ),
+            daily_form=FORM_STRING[d_fn_i].format(part="daily", time="DAY"),
             daily_modulation_form=(
                 # No modulation is times one, not times zero
-                FORM_STRING[dm_fn_i] if dm_fn_i != 0 else "1"
+                FORM_STRING[dm_fn_i]
+                if dm_fn_i != 0
+                else "1"
             ).format(part="dm", time="YEAR"),
-            annual_form=FORM_STRING[ann_fn_i].format(
-                part="ann", time="YEAR"
-            ),
+            annual_form=FORM_STRING[ann_fn_i].format(part="ann", time="YEAR"),
         )
-        print("".join([function_name, '_numexpr_expr = "', numexpr_expr, '"']),
-              file=out_file)
+        print(
+            "".join([function_name, '_numexpr_expr = "', numexpr_expr, '"']),
+            file=out_file,
+        )
         numexpr_fn = NUMEXPR_FUNCTION_SCRIPT.format(
             function_name=function_name + "_numexpr_fn",
             parameters=parameters.replace("floating_type ", ""),
             # Turn the parameters into a "key": value list
             parameter_dict="".join(
-                '            '
+                "            "
                 '"{param:s}": {param:s},\n'.format(param=param.strip(","))
-                for param in parameters.replace(
-                        "floating_type ", ""
-                ).split(", ")
+                for param in parameters.replace("floating_type ", "").split(", ")
                 if param
             ),
             expression=numexpr_expr,
@@ -369,23 +366,21 @@ GLOBAL_DICT = {
         python_function = PYTHON_FUNCTION_SCRIPT.format(
             function_name=function_name + "_python",
             parameters=parameters.replace("floating_type ", ""),
-            daily_form=FORM_STRING[d_fn_i].format(
-                part="daily", time="DAY"
-            ),
+            daily_form=FORM_STRING[d_fn_i].format(part="daily", time="DAY"),
             daily_modulation_form=(
                 # No modulation is times one, not times zero
-                FORM_STRING[dm_fn_i] if dm_fn_i != 0 else "1"
+                FORM_STRING[dm_fn_i]
+                if dm_fn_i != 0
+                else "1"
             ).format(part="dm", time="YEAR"),
-            annual_form=FORM_STRING[ann_fn_i].format(
-                part="ann", time="YEAR"
-            ),
+            annual_form=FORM_STRING[ann_fn_i].format(part="ann", time="YEAR"),
         )
         print(python_function, file=out_file)
         print(python_function, file=out_file_py)
 
 
-from setuptools import setup, Extension
 from Cython.Build import cythonize
+from setuptools import Extension, setup
 
 setup(
     author="DWesl",
@@ -398,5 +393,5 @@ setup(
         ),
         include_path=[np.get_include()],
         compiler_directives=dict(embedsignature=True),
-    )
+    ),
 )

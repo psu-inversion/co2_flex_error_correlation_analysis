@@ -6,26 +6,28 @@ I will likely need to generalize this to include cross-validation
 across towers at some point.  I may limit that to only a subset of the
 correlation functions.
 """
-from __future__ import print_function, division
+from __future__ import division, print_function
 
 import datetime
 import itertools
 
-import numpy as np
-import scipy.optimize
 import matplotlib.pyplot as plt
+import numpy as np
 import pandas as pd
+import scipy.optimize
 import xarray
 
 import flux_correlation_function_fits
-from correlation_utils import get_autocorrelation_stats
-
 from correlation_function_fits import (
-    GLOBAL_DICT, CorrelationPart, PartForm,
-    is_valid_combination, get_full_expression,
+    GLOBAL_DICT,
+    CorrelationPart,
+    PartForm,
+    get_full_expression,
     get_full_parameter_list,
     get_weighted_fit_expression,
+    is_valid_combination,
 )
+from correlation_utils import get_autocorrelation_stats
 
 # Time constants
 HOURS_PER_DAY = 24
@@ -51,23 +53,19 @@ def has_enough_data(da):
     -------
     bool
     """
-    time_index_name = [
-        name
-        for name in da.dims
-        if "time" in name.lower()
-    ][0]
+    time_index_name = [name for name in da.dims if "time" in name.lower()][0]
     time_index = da.indexes[time_index_name]
     if len(time_index) < 1:
         print("No data")
         return False
     if time_index[-1] - time_index[0] < datetime.timedelta(
-            days=N_YEARS_DATA * DAYS_PER_YEAR
+        days=N_YEARS_DATA * DAYS_PER_YEAR
     ):
         print("< 2 years")
         return False
     if (
-            da.count(time_index_name).values[()] <
-            REQUIRED_DATA_FRAC * N_YEARS_DATA * HOURS_PER_YEAR
+        da.count(time_index_name).values[()]
+        < REQUIRED_DATA_FRAC * N_YEARS_DATA * HOURS_PER_YEAR
     ):
         print("Missing data")
         return False
@@ -96,61 +94,61 @@ def timedelta_index_to_floats(index):
 ############################################################
 # Set initial values and bounds for the parameters
 STARTING_PARAMS = dict(
-    daily_coef = 0.2,
-    daily_coef1 = .7,
-    daily_coef2 = .3,
-    daily_width = .5,
-    daily_timescale = 60,  # fortnights
-    dm_width = .8,
-    dm_coef1 = .3,
-    dm_coef2 = +.1,
-    ann_coef1 = +.4,
-    ann_coef2 = +.3,
-    ann_coef = 0.1,
-    ann_width = .3,
-    ann_timescale = 3.,  # decades
-    resid_coef = 0.05,
-    resid_timescale = 2.,  # fortnights
-    ec_coef = 0.7,
-    ec_timescale = 2.,  # hours
+    daily_coef=0.2,
+    daily_coef1=0.7,
+    daily_coef2=0.3,
+    daily_width=0.5,
+    daily_timescale=60,  # fortnights
+    dm_width=0.8,
+    dm_coef1=0.3,
+    dm_coef2=+0.1,
+    ann_coef1=+0.4,
+    ann_coef2=+0.3,
+    ann_coef=0.1,
+    ann_width=0.3,
+    ann_timescale=3.0,  # decades
+    resid_coef=0.05,
+    resid_timescale=2.0,  # fortnights
+    ec_coef=0.7,
+    ec_timescale=2.0,  # hours
 )
 PARAM_LOWER_BOUNDS = dict(
-    daily_coef = -10,
-    daily_coef1 = -10,
-    daily_coef2 = -10,
-    daily_width = 0,
-    daily_timescale = 0,  # fortnights
-    dm_width = 0,
-    dm_coef1 = -10,
-    dm_coef2 = -10,
-    ann_coef1 = -10,
-    ann_coef2 = -10,
-    ann_coef = -10,
-    ann_width = 0,
-    ann_timescale = 0,  # decades
-    resid_coef = -10,
-    resid_timescale = 0.,  # fortnights
-    ec_coef = -10,
-    ec_timescale = 0.,  # hours
+    daily_coef=-10,
+    daily_coef1=-10,
+    daily_coef2=-10,
+    daily_width=0,
+    daily_timescale=0,  # fortnights
+    dm_width=0,
+    dm_coef1=-10,
+    dm_coef2=-10,
+    ann_coef1=-10,
+    ann_coef2=-10,
+    ann_coef=-10,
+    ann_width=0,
+    ann_timescale=0,  # decades
+    resid_coef=-10,
+    resid_timescale=0.0,  # fortnights
+    ec_coef=-10,
+    ec_timescale=0.0,  # hours
 )
 PARAM_UPPER_BOUNDS = dict(
-    daily_coef = 10,
-    daily_coef1 = 10,
-    daily_coef2 = 10,
-    daily_width = 10,
-    daily_timescale = 500,  # fortnights
-    dm_width = 10,
-    dm_coef1 = 10,
-    dm_coef2 = 10,
-    ann_coef1 = 10,
-    ann_coef2 = 10,
-    ann_coef = 10,
-    ann_width = 10,
-    ann_timescale = 4,  # decades
-    resid_coef = 10,
-    resid_timescale = 500.,  # fortnights
-    ec_coef = 10,
-    ec_timescale = 1000.,  # hours
+    daily_coef=10,
+    daily_coef1=10,
+    daily_coef2=10,
+    daily_width=10,
+    daily_timescale=500,  # fortnights
+    dm_width=10,
+    dm_coef1=10,
+    dm_coef2=10,
+    ann_coef1=10,
+    ann_coef2=10,
+    ann_coef=10,
+    ann_width=10,
+    ann_timescale=4,  # decades
+    resid_coef=10,
+    resid_timescale=500.0,  # fortnights
+    ec_coef=10,
+    ec_timescale=1000.0,  # hours
 )
 
 # Convert initial values and bounds to float32
@@ -173,18 +171,22 @@ AMERIFLUX_MINUS_CASA_DATA = xarray.open_dataset(
 # Set up data frames for results
 COEF_DATA = pd.DataFrame(
     index=pd.MultiIndex.from_product(
-        [AMERIFLUX_MINUS_CASA_DATA.indexes["site"],
-         [
-             "_".join([
-                 "{0:s}{1:s}".format(
-                     part.get_short_name(),
-                     form.get_short_name(),
-                 )
-                 for part, form in zip(CorrelationPart, forms)
-             ])
-             for forms in itertools.product(PartForm, PartForm, PartForm)
-             if is_valid_combination(*forms)
-         ]],
+        [
+            AMERIFLUX_MINUS_CASA_DATA.indexes["site"],
+            [
+                "_".join(
+                    [
+                        "{0:s}{1:s}".format(
+                            part.get_short_name(),
+                            form.get_short_name(),
+                        )
+                        for part, form in zip(CorrelationPart, forms)
+                    ]
+                )
+                for forms in itertools.product(PartForm, PartForm, PartForm)
+                if is_valid_combination(*forms)
+            ],
+        ],
         names=["Site", "Correlation Function"],
     ),
     columns=[
@@ -226,24 +228,21 @@ for site_name in AMERIFLUX_MINUS_CASA_DATA.indexes["site"]:
     print(site_name, flush=True)
     # Pull out non-missing site data, so I can get a decent idea of
     # what has enough data I can use.
-    site_data = AMERIFLUX_MINUS_CASA_DATA[
-        "flux_difference"
-    ].sel(
-        site=site_name
-    ).dropna("time").sortby("time")
+    site_data = (
+        AMERIFLUX_MINUS_CASA_DATA["flux_difference"]
+        .sel(site=site_name)
+        .dropna("time")
+        .sortby("time")
+    )
 
     # Split data in two, so we have separate training and validation
     # data sets.
-    first_half  = site_data.isel(
-        time=slice(None, len(site_data) // 2)
-    )
-    second_half = site_data.isel(
-        time=slice(len(site_data) // 2, None)
-    )
+    first_half = site_data.isel(time=slice(None, len(site_data) // 2))
+    second_half = site_data.isel(time=slice(len(site_data) // 2, None))
     if not (has_enough_data(first_half) and has_enough_data(second_half)):
         print("Not enough data.  Skipping:", site_name)
         continue
-    
+
     # Resample to an hour, so acf/count_pairs can work (they assume
     # regularly spaced data, and I need the .freq attribute to make
     # that happen)
@@ -251,47 +250,39 @@ for site_name in AMERIFLUX_MINUS_CASA_DATA.indexes["site"]:
     second_half.resample(time="1H").first()
 
     for train_data, validation_data in itertools.permutations(
-            [first_half, second_half]
+        [first_half, second_half]
     ):
         print("New train/val split")
         corr_data_train = get_autocorrelation_stats(
-            train_data.to_dataframe()[
-                "flux_difference"
-            ].resample("1H").first()
+            train_data.to_dataframe()["flux_difference"].resample("1H").first()
         )
-        corr_data_train = corr_data_train[
-            corr_data_train["pair_counts"] > 0
-        ]
+        corr_data_train = corr_data_train[corr_data_train["pair_counts"] > 0]
         corr_data_validate = get_autocorrelation_stats(
-            validation_data.to_dataframe()[
-                "flux_difference"
-            ].resample("1H").first()
+            validation_data.to_dataframe()["flux_difference"].resample("1H").first()
         )
-        corr_data_validate = corr_data_validate[
-            corr_data_validate["pair_counts"] > 0
-        ]
+        corr_data_validate = corr_data_validate[corr_data_validate["pair_counts"] > 0]
         acf_lags_train = timedelta_index_to_floats(corr_data_train.index)
         acf_lags_validate = timedelta_index_to_floats(corr_data_validate.index)
-        acf_weights_train = 1. / np.sqrt(corr_data_train["pair_counts"])
-        acf_weights_validate = 1. / np.sqrt(corr_data_validate["pair_counts"])
+        acf_weights_train = 1.0 / np.sqrt(corr_data_train["pair_counts"])
+        acf_weights_validate = 1.0 / np.sqrt(corr_data_validate["pair_counts"])
 
         for forms in itertools.product(PartForm, PartForm, PartForm):
             if not is_valid_combination(*forms):
                 continue
 
             # Get function to optimize
-            func_short_name = "_".join([
-                 "{0:s}{1:s}".format(
-                     part.get_short_name(),
-                     form.get_short_name(),
-                 )
-                 for part, form in zip(CorrelationPart, forms)
-             ])
+            func_short_name = "_".join(
+                [
+                    "{0:s}{1:s}".format(
+                        part.get_short_name(),
+                        form.get_short_name(),
+                    )
+                    for part, form in zip(CorrelationPart, forms)
+                ]
+            )
             print(func_short_name, flush=True)
             name_to_optimize = "{fun_name}_fit_loop".format(fun_name=func_short_name)
-            fun_to_optimize = getattr(
-                flux_correlation_function_fits, name_to_optimize
-            )
+            fun_to_optimize = getattr(flux_correlation_function_fits, name_to_optimize)
             fun_to_check = getattr(
                 flux_correlation_function_fits,
                 "{fun_name}_fit_ne".format(fun_name=func_short_name),
@@ -318,15 +309,15 @@ for site_name in AMERIFLUX_MINUS_CASA_DATA.indexes["site"]:
                 flux_correlation_function_fits,
                 "{fun_name:s}_curve_loop".format(fun_name=func_short_name),
             )
+
             def curve_deriv(tdata, *params):
                 return curve_and_deriv(tdata, *params)[1]
+
             try:
                 opt_params, param_cov = scipy.optimize.curve_fit(
                     getattr(
                         flux_correlation_function_fits,
-                        "{fun_name:s}_curve_ne".format(
-                            fun_name=func_short_name
-                        ),
+                        "{fun_name:s}_curve_ne".format(fun_name=func_short_name),
                     ),
                     acf_lags_train.astype(np.float32),
                     corr_data_train["acf"].astype(np.float32).values,
@@ -346,27 +337,23 @@ for site_name in AMERIFLUX_MINUS_CASA_DATA.indexes["site"]:
             # If this fit's cross-validation score is worse than the
             # currently-stored one, don't bother recording.
             if (
-                    fun_to_optimize(
-                        opt_params,
-                        acf_lags_validate,
-                        corr_data_validate["acf"].astype(np.float32).values,
-                        corr_data_validate["pair_counts"].astype(
-                            np.float32
-                        ).values,
-                    )[0] >
-                    CORRELATION_FIT_ERROR.loc[
-                        (site_name, func_short_name),
-                        ("function_optimized", "weighted_error_out_of_sample")
-                    ]
+                fun_to_optimize(
+                    opt_params,
+                    acf_lags_validate,
+                    corr_data_validate["acf"].astype(np.float32).values,
+                    corr_data_validate["pair_counts"].astype(np.float32).values,
+                )[0]
+                > CORRELATION_FIT_ERROR.loc[
+                    (site_name, func_short_name),
+                    ("function_optimized", "weighted_error_out_of_sample"),
+                ]
             ):
                 continue
 
             # Otherwise, save the results
-            COEF_DATA.loc[(site_name, func_short_name), parameter_list] = (
-                opt_params
-            )
-            COEF_VAR_DATA.loc[(site_name, func_short_name), parameter_list] = (
-                np.diag(param_cov)
+            COEF_DATA.loc[(site_name, func_short_name), parameter_list] = opt_params
+            COEF_VAR_DATA.loc[(site_name, func_short_name), parameter_list] = np.diag(
+                param_cov
             )
             CORRELATION_FIT_ERROR.loc[
                 (site_name, func_short_name),
@@ -376,7 +363,9 @@ for site_name in AMERIFLUX_MINUS_CASA_DATA.indexes["site"]:
                 acf_lags_train,
                 corr_data_train["acf"].astype(np.float32).values,
                 corr_data_train["pair_counts"].astype(np.float32).values,
-            )[0]
+            )[
+                0
+            ]
             CORRELATION_FIT_ERROR.loc[
                 (site_name, func_short_name),
                 ("function_optimized", "weighted_error_out_of_sample"),
@@ -385,7 +374,9 @@ for site_name in AMERIFLUX_MINUS_CASA_DATA.indexes["site"]:
                 acf_lags_validate,
                 corr_data_validate["acf"].astype(np.float32).values,
                 corr_data_validate["pair_counts"].astype(np.float32).values,
-            )[0]
+            )[
+                0
+            ]
             CORRELATION_FIT_ERROR.loc[
                 (site_name, func_short_name),
                 ("other_function", "weighted_error_in_sample"),
@@ -424,11 +415,13 @@ for site_name in AMERIFLUX_MINUS_CASA_DATA.indexes["site"]:
     for ax in axes[-1, :]:
         ax.set_xlabel("Time difference (years)")
         ax.set_xticklabels(range(len(xticks)))
-    sorted_fits = CORRELATION_FIT_ERROR.loc[
-        (site_name, slice(None)), ("function_optimized", slice(None))
-    ].sort_values(
-        ("function_optimized", "weighted_error_out_of_sample")
-    ).dropna(how="all")
+    sorted_fits = (
+        CORRELATION_FIT_ERROR.loc[
+            (site_name, slice(None)), ("function_optimized", slice(None))
+        ]
+        .sort_values(("function_optimized", "weighted_error_out_of_sample"))
+        .dropna(how="all")
+    )
     print(sorted_fits.iloc[:3, :])
     for i, fun_name in enumerate(sorted_fits.iloc[:3, :].index.get_level_values(1), 1):
         print(fun_name)
@@ -454,8 +447,7 @@ for site_name in AMERIFLUX_MINUS_CASA_DATA.indexes["site"]:
     fig.tight_layout()
     fig.subplots_adjust(top=0.88)
     fig.savefig(
-        "{site_name:s}-cross-validation-function-fits.png"
-        .format(site_name=site_name)
+        "{site_name:s}-cross-validation-function-fits.png".format(site_name=site_name)
     )
     xticks_short = pd.timedelta_range(start=0, freq="7D", periods=7)
     xtick_labels = ["{n:d} days".format(n=i * 7) for i in range(len(xticks_short))]
@@ -466,8 +458,9 @@ for site_name in AMERIFLUX_MINUS_CASA_DATA.indexes["site"]:
         ax.set_xticklabels(xtick_labels)
         ax.set_xlabel("Time difference (days)")
     fig.savefig(
-        "{site_name:s}-cross-validation-function-fits-short.png"
-        .format(site_name=site_name)
+        "{site_name:s}-cross-validation-function-fits-short.png".format(
+            site_name=site_name
+        )
     )
     plt.close(fig)
 
