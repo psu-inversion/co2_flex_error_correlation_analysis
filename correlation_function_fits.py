@@ -14,9 +14,6 @@ import operator
 import pprint
 
 import numpy as np
-import matplotlib.pyplot as plt
-import numexpr as ne
-import pandas as pd
 
 HOURS_PER_DAY=24
 DAYS_PER_DAY=1
@@ -371,6 +368,9 @@ def get_weighted_fit_expression(part_daily, part_day_mod, part_annual):
 
 
 if __name__ == "__main__":
+    import numexpr as ne
+    import pandas as pd
+
     print("Reading coefficient data", flush=True)
     coef_data = pd.read_csv(
         "ameriflux-minus-casa-all-towers-parameters.csv",
