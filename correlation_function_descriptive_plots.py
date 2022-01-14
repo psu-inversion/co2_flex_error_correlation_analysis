@@ -18,7 +18,8 @@ import correlation_function_fits
 # Set up constants for plots
 
 # For deomonstration purposes only
-DAYS_PER_YEAR = 6
+DAYS_PER_YEAR = 365.2425
+DAYS_PER_WEEK = 7
 DAYS_PER_DAY = 1
 EPS = 1e-13
 
@@ -34,11 +35,12 @@ GLOBAL_DICT.update({
     "FOUR_PI_OVER_YEAR": 4 * np.pi / DAYS_PER_YEAR,
 })
 
-TIMES = np.linspace(0, DAYS_PER_YEAR, 601)
+TIMES_YEAR = np.linspace(0, DAYS_PER_YEAR, 365 * 12 + 1)
+TIMES_WEEK = np.linspace(0, DAYS_PER_WEEK, 601)
 AX_HEIGHT = 5.5
 AX_WIDTH = 6
 
-LOCAL_DICT = {"tdata": TIMES}
+LOCAL_DICT = {"tdata": TIMES_WEEK}
 for part in ("daily", "dm", "ann"):
     LOCAL_DICT.update({
         "{part:s}_coef".format(part=part): 1,
@@ -88,7 +90,7 @@ fig, axes = plt.subplots(
     len(correlation_function_fits.PartForm),
     len(correlation_function_fits.CorrelationPart),
     figsize=(AX_WIDTH, AX_HEIGHT),
-    sharex=True, sharey=True,
+    sharex="col", sharey=True,
 )
 
 for axes_row, part_form in zip(
@@ -98,6 +100,12 @@ for axes_row, part_form in zip(
     for ax, func_part in zip(
             axes_row, correlation_function_fits.CorrelationPart
     ):
+        if func_part == correlation_function_fits.CorrelationPart.DAILY:
+            LOCAL_DICT["tdata"] = TIMES_WEEK
+            xdata = TIMES_WEEK
+        else:
+            LOCAL_DICT["tdata"] = TIMES_YEAR
+            xdata = TIMES_YEAR / DAYS_PER_YEAR * 12
         if func_part.is_modulation():
             expression = part_form.get_expression(func_part)
             expression += " * cos(TWO_PI_OVER_DAY * tdata)"
@@ -105,7 +113,7 @@ for axes_row, part_form in zip(
             expression = part_form.get_expression(func_part)
         ax.plot(
             *np.broadcast_arrays(
-                TIMES,
+                xdata,
                 ne.evaluate(
                     expression,
                     global_dict=GLOBAL_DICT,
@@ -114,11 +122,11 @@ for axes_row, part_form in zip(
             )
         )
         ax.set_ylim(-1, 1)
-        ax.set_xlim(0, DAYS_PER_YEAR)
-        ax.set_xticks(np.arange(0, DAYS_PER_YEAR + EPS, 3))
-        ax.set_xticks(np.arange(0, DAYS_PER_YEAR + EPS, 1), minor=True)
+        ax.set_xlim(0, xdata[-1])
+        ax.set_xticks(np.arange(0, xdata[-1] + EPS, 3))
+        ax.set_xticks(np.arange(0, xdata[-1] + EPS, 1), minor=True)
         ax.text(
-            3, -0.8,
+            xdata[len(xdata) // 2], -0.8,
             "{:s}$_{{{:s}}}$".format(
                 (
                     func_part.name[0]
@@ -141,10 +149,11 @@ for ax, func_part in zip(
 ):
     ax.set_title(func_part)
 
-for ax in axes[-1, :]:
-    ax.set_xlabel("Time Lag (days)\n(6 days = 1 year)")
+axes[-1, 0].set_xlabel("Time Lag (days)")
+for ax in axes[-1, 1:]:
+    ax.set_xlabel("Time Lag (months)")
 
 fig.tight_layout()
 fig.savefig("demonstration-corr-fun-slots-and-forms.pdf")
-fig.savefig("demonstration-corr-fun-slots-and-forms.png")
+fig.savefig("demonstration-corr-fun-slots-and-forms.png", dpi=300)
 plt.close(fig)
