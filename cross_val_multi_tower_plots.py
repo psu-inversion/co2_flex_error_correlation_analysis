@@ -165,7 +165,7 @@ ds = xarray.open_dataset(
 ############################################################
 # Turn dataset into dataframe
 df = ds["cross_validation_error"].to_dataframe().replace({
-    "Geostatistical": "Geostat.",
+    "Geostatistical": "Decoupled",
     "Exponential sine-squared": "Exp. sin\N{SUPERSCRIPT TWO}",
     "3-term cosine series": "Cosines"
 })
@@ -173,7 +173,7 @@ df = ds["cross_validation_error"].to_dataframe().replace({
 for slot_var in ("daily_cycle", "annual_cycle", "annual_modulation_of_daily_cycle"):
     df[slot_var] = pd.Categorical(
         df[slot_var],
-        categories=["None", "Geostat.", "Exp. sin\N{SUPERSCRIPT TWO}", "Cosines"],
+        categories=["None", "Decoupled", "Exp. sin\N{SUPERSCRIPT TWO}", "Cosines"],
         ordered=True
     )
 
@@ -229,8 +229,8 @@ for i in range(3 + 1):
         for i, col in enumerate(full_X.columns)
         if (
             (
-                ":daily_cycle[T.Geostat.]" not in col and
-                not col.startswith("daily_cycle[T.Geostat.]:")
+                ":daily_cycle[T.Decoupled]" not in col and
+                not col.startswith("daily_cycle[T.Decoupled]:")
             ) or
             "annual_modulation_of_daily_cycle" not in col
         )
@@ -492,7 +492,7 @@ parameter_variation_df = (
     ds["optimized_parameters"].reduce(scipy.stats.iqr, dim="splits", nan_policy="omit") /
     np.abs(ds["optimized_parameters"].median("splits"))
 ).to_dataframe().replace({
-    "Geostatistical": "Geostat.",
+    "Geostatistical": "Decoupled",
     "Exponential sine-squared": "Exp. sin\N{SUPERSCRIPT TWO}",
     "3-term cosine series": "Cosines"
 }).rename(
