@@ -376,14 +376,14 @@ CORRELATION_TIMES = (
     correlation_data.index.values.astype("m8[h]").astype("i8").astype("f4") / 24
 )
 CORRELATIONS = {
-    "Best overall function": flux_correlation_function_fits.dc_dmc_ap_curve_ne(
+    "EC-driven: with ann.": flux_correlation_function_fits.dc_dmc_ap_curve_ne(
         CORRELATION_TIMES,
         **MEAN_COEFFICIENTS.sel(correlation_function="dc_dmc_ap")
         .to_series()
         .dropna()
         .to_dict(),
     ),
-    "Best function w/o ann. cycle": flux_correlation_function_fits.dp_dmc_a0_curve_ne(
+    "EC-driven no ann.": flux_correlation_function_fits.dp_dmc_a0_curve_ne(
         CORRELATION_TIMES,
         **MEAN_COEFFICIENTS.sel(correlation_function="dp_dmc_a0")
         .to_series()
@@ -392,19 +392,26 @@ CORRELATIONS = {
     ),
 }
 
+LINE_STYLES = ["-", "--", ":", "-."]
 with mpl.rc_context(
     {
-        "axes.prop_cycle": mpl.rcParams["axes.prop_cycle"][:4]
-        + cycler.cycler("linestyle", ["-", "--", ":", "-."])
+        "axes.prop_cycle": (
+            mpl.rcParams["axes.prop_cycle"][:4]
+            + cycler.cycler("linestyle", LINE_STYLES)
+        )
     }
 ):
     # Plot the modeled correlations
     MODELED_CORRELATION_LINES = []
     for ax in multi_corr_axes.flat:
-        for label, modeled_corr in CORRELATIONS.items():
+        for (label, modeled_corr), linestyle in zip(CORRELATIONS.items(), LINE_STYLES):
             MODELED_CORRELATION_LINES.extend(
                 ax.plot(
-                    correlation_data.index.values, modeled_corr, alpha=0.6, label=label
+                    correlation_data.index.values,
+                    modeled_corr,
+                    alpha=0.6,
+                    label=label,
+                    linestyle=linestyle,
                 )
             )
 
@@ -634,9 +641,7 @@ savefig(
 )
 
 site_name = "US-PFa"
-site_df = (
-    site_data.to_dataframe().loc[:, site_data.data_vars].resample("1H").mean()
-)
+site_df = site_data.to_dataframe().loc[:, site_data.data_vars].resample("1H").mean()
 site_data = MATCHED_DATA_DS.sel(site=site_name).load().dropna("time", how="any")
 correlation_data = correlation_utils.get_autocorrelation_stats(
     site_df["flux_difference"]
@@ -668,7 +673,7 @@ axes[-1].set_xlim(xtick_index[[0, -1]].astype("i8").astype("f4"))
 axes[-1].set_xticks(xtick_index.astype("i8").astype("f4"))
 axes[-1].set_xticklabels(np.arange(len(xtick_index)))
 axes[-1].set_xlabel("Time difference (weeks)")
-fig.subplots_adjust(top=0.95, hspace=0.3, hspace=0.8)
+# fig.subplots_adjust(top=0.95, hspace=0.3, hspace=0.8)
 fig.suptitle(site_name)
 
 axes[1].set_xlabel("Time")
