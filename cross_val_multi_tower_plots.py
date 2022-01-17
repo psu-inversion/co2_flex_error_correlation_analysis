@@ -382,8 +382,8 @@ fig.savefig("multi-tower-cross-validation-error-sorted-wide.pdf")
 fig.savefig("multi-tower-cross-validation-error-sorted-wide.png")
 
 ax.set_yscale("log")
-fig.savefig("multi-tower-cross-validation-error-sorted-wide.pdf")
-fig.savefig("multi-tower-cross-validation-error-sorted-wide.png")
+fig.savefig("multi-tower-log-cross-validation-error-sorted-wide.pdf")
+fig.savefig("multi-tower-log-cross-validation-error-sorted-wide.png")
 
 ############################################################
 # Compare means with CIs
@@ -400,7 +400,7 @@ grid = sns.catplot(
     aspect=0.5
 )
 grid.fig.autofmt_xdate()
-grid.axes[0, 0].set_ylabel("Mean Cross-Validation Error\n(unitless; lower is better)")
+grid.axes[0, 0].set_ylabel("Mean Cross-Validation Error\n(unitless; log scale; lower is better)")
 grid.set_titles(
     row_template="{row_var: ^11s}\n{row_name: ^11s}",
     col_template="{col_var: ^11s}\n{col_name: ^11s}"
@@ -474,6 +474,7 @@ fig.savefig("multi-tower-cross-validation-error-vs-n-params.png")
 
 ax.set_yscale("log")
 ylim = ax.get_ylim()
+ax.set_ylabel("Mean Cross-Validation Error\n(unitless; log scale; lower is better)")
 fig.savefig("multi-tower-log-cross-validation-error-vs-n-params.pdf")
 fig.savefig("multi-tower-log-cross-validation-error-vs-n-params.png")
 
