@@ -3,6 +3,8 @@ from __future__ import print_function
 import collections
 
 import numpy as np
+import matplotlib as mpl
+mpl.use("Agg")
 import matplotlib.pyplot as plt
 import pandas as pd
 import scipy
@@ -17,7 +19,8 @@ from statsmodels.stats.anova import anova_lm
 sns.set_context("paper")
 sns.set(style="ticks")
 sns.set_palette("colorblind")
-
+mpl.rcParams["figure.dpi"] = 144
+mpl.rcParams["savefig.dpi"] = 300
 
 ############################################################
 # Define description function
@@ -272,6 +275,9 @@ for ax in grid.axes[:, -1]:
         if isinstance(child, plt.Text):
             child.set_visible(False)
 
+for ax in grid.axes[:, 0]:
+    ax.set_ylabel("Annual\nModulation\nof Daily Cycle")
+
 grid.axes[0, -1].set_title("", visible=True)
 grid.axes[0, 0].set_xlim(0, None)
 grid.set_titles(
@@ -280,15 +286,15 @@ grid.set_titles(
 )
 grid.set_xlabels("Cross-Validation\nError")
 grid.fig.tight_layout()
-grid.fig.savefig("multi-tower-cross-validation-error-by-function.pdf")
-grid.fig.savefig("multi-tower-cross-validation-error-by-function.png")
+grid.fig.savefig("multi-tower-cross-validation-error-by-function.pdf", bbox_inches="tight")
+grid.fig.savefig("multi-tower-cross-validation-error-by-function.png", bbox_inches="tight")
 
 for ax in grid.axes.flat:
     ax.set_xscale("log")
     ax.set_xlim(0.08e9, 4e9)
 
-grid.fig.savefig("multi-tower-log-cross-validation-error-by-function.pdf")
-grid.fig.savefig("multi-tower-log-cross-validation-error-by-function.png")
+grid.fig.savefig("multi-tower-log-cross-validation-error-by-function.pdf", bbox_inches="tight")
+grid.fig.savefig("multi-tower-log-cross-validation-error-by-function.png", bbox_inches="tight")
 
 ############################################################
 # Draw boxplots showing details of distribution for best functions
@@ -297,7 +303,7 @@ low_cv_err = df_for_plot["cross_validation_error"].groupby(
 ).mean() < 3e8
 df_for_best_plot = df_for_plot.loc[(low_cv_err.index[low_cv_err.values], slice(None)), :]
 for slot_var in ("Daily Cycle", "Annual Cycle", "Annual Modulation\nof Daily Cycle"):
-    df_for_best_plot[slot_var] = pd.Categorical(
+    df_for_best_plot.loc[:, slot_var] = pd.Categorical(
         df_for_best_plot[slot_var],
     ).remove_unused_categories()
 
@@ -318,6 +324,9 @@ for ax in grid.axes[:, -1]:
         if isinstance(child, plt.Text):
             child.set_visible(False)
 
+for ax in grid.axes[:, 0]:
+    ax.set_ylabel("Annual\nModulation\nof Daily Cycle")
+
 grid.axes[0, -1].set_title("", visible=True)
 grid.axes[0, 0].set_xlim(0, None)
 grid.set_titles(
@@ -326,15 +335,15 @@ grid.set_titles(
 )
 grid.set_xlabels("Cross-Validation\nError")
 grid.fig.tight_layout()
-grid.fig.savefig("multi-tower-cross-validation-best-error-by-function.pdf")
-grid.fig.savefig("multi-tower-cross-validation-best-error-by-function.png")
+grid.fig.savefig("multi-tower-cross-validation-best-error-by-function.pdf", bbox_inches="tight")
+grid.fig.savefig("multi-tower-cross-validation-best-error-by-function.png", bbox_inches="tight")
 
 for ax in grid.axes.flat:
     ax.set_xscale("log")
     ax.set_xlim(0.08e9, 4e9)
 
-grid.fig.savefig("multi-tower-log-cross-validation-best-error-by-function.pdf")
-grid.fig.savefig("multi-tower-log-cross-validation-best-error-by-function.png")
+grid.fig.savefig("multi-tower-log-cross-validation-best-error-by-function.pdf", bbox_inches="tight")
+grid.fig.savefig("multi-tower-log-cross-validation-best-error-by-function.png", bbox_inches="tight")
 
 ############################################################
 # Sorted box plots
@@ -408,8 +417,8 @@ grid.set_titles(
 for ax in grid.axes[0, :]:
     ylim = grid.axes[0, 0].get_ylim()
 
-grid.fig.savefig("multi-tower-cross-validation-log-error-anova-variations.pdf")
-grid.fig.savefig("multi-tower-cross-validation-log-error-anova-variations.png")
+grid.fig.savefig("multi-tower-cross-validation-log-error-anova-variations.pdf", bbox_inches="tight")
+grid.fig.savefig("multi-tower-cross-validation-log-error-anova-variations.png", bbox_inches="tight")
 
 ############################################################
 # Compare best means with CIs
@@ -434,8 +443,8 @@ grid.set_titles(
 for ax in grid.axes[0, :]:
     ylim = grid.axes[0, 0].get_ylim()
 
-grid.fig.savefig("multi-tower-cross-validation-best-error-anova-variations.pdf")
-grid.fig.savefig("multi-tower-cross-validation-best-error-anova-variations.png")
+grid.fig.savefig("multi-tower-cross-validation-best-error-anova-variations.pdf", bbox_inches="tight")
+grid.fig.savefig("multi-tower-cross-validation-best-error-anova-variations.png", bbox_inches="tight")
 
 ############################################################
 # Calculate summary statistics

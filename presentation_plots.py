@@ -25,6 +25,8 @@ import correlation_function_fits
 import correlation_utils
 import flux_correlation_function_fits
 
+mpl.rcParams["figure.dpi"] = 144
+mpl.rcParams["savefig.dpi"] = 300
 register_matplotlib_converters()
 
 ############################################################
@@ -504,7 +506,8 @@ ax.add_feature(cfeat.STATES, edgecolor="gray")
 fig.savefig(
     "ameriflux-towers-at-least-{n_years:d}-years-data.pdf".format(
         n_years=MIN_YEARS_DATA
-    )
+    ),
+    bbox_inches="tight"
 )
 
 for site_name in LONG_DATA_SITES:
@@ -604,7 +607,7 @@ cax.set_ylabel("CASA ensemble-mean NEE\n(g C/m$^2$/month)")
 
 print("Saving figure with just CASA")
 # fig.savefig("casa-ensemble-mean-nee-2010-07.png", dpi=288)
-savefig(fig, "casa-ensemble-mean-nee-2010-07.png", dpi=96, ncolors=128)
+savefig(fig, "casa-ensemble-mean-nee-2010-07.png", dpi=144, ncolors=128)
 
 ax.plot(
     LONG_DATA_LONGITUDES,
@@ -617,7 +620,7 @@ ax.plot(
 ax.set_title("CASA NEE for July 2010 with tower locations")
 print("Saving figure with CASA and tower locs")
 # fig.savefig("casa-ensemble-mean-nee-2020-07-with-towers.png", dpi=288)
-savefig(fig, "casa-ensemble-mean-nee-2010-07-with-towers.png", dpi=96, ncolors=128)
+savefig(fig, "casa-ensemble-mean-nee-2010-07-with-towers.png", dpi=144, ncolors=128)
 
 ax.plot(
     LONG_DATA_LONGITUDES.sel(
@@ -636,7 +639,7 @@ print("Saving figure with CASA, tower locs, and highlights on example towers")
 savefig(
     fig,
     "casa-ensemble-mean-nee-2010-07-with-towers-highlighted.png",
-    dpi=96,
+    dpi=144,
     ncolors=128,
 )
 
