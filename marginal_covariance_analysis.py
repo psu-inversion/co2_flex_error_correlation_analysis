@@ -64,14 +64,14 @@ NOW_ISO = NOW.isoformat()
 # Read in flux data
 print("Reading AmeriFlux data", flush=True)
 amf_hour_ds = xarray.open_dataset(
-    "/abl/s0/Continent/dfw5129/ameriflux_netcdf/"
+    "/abl/s0/Continent/dfw5129/ameriflux_netcdf/ameriflux_base_data/output/"
     "AmeriFlux_single_value_per_tower_hour_data.nc4",
     chunks={"TIMESTAMP_START": int(HOURS_PER_YEAR),
             "site": 20},
 ).resample(TIMESTAMP_START="1H").mean()
 print("Reading more AmeriFlux data", flush=True)
 amf_half_hour_ds = xarray.open_dataset(
-    "/abl/s0/Continent/dfw5129/ameriflux_netcdf/"
+    "/abl/s0/Continent/dfw5129/ameriflux_netcdf/ameriflux_base_data/output/"
     "AmeriFlux_single_value_per_tower_half_hour_data.nc4",
     chunks={"TIMESTAMP_START": int(HOURS_PER_YEAR),
             "site": 20},
@@ -83,7 +83,7 @@ amf_ds = xarray.concat(
 ).persist()
 print("Reading CASA data", flush=True)
 casa_ds = xarray.open_mfdataset(
-    ("/mc1s2/s4/dfw5129/casa_downscaling/"
+    ("/abl/s0/Continent/dfw5129/casa_downscaling/"
      "20??-??_downscaled_CASA_L2_Ensemble_Mean_Biogenic_NEE_Ameriflux.nc4"),
     combine="by_coords",
     chunks={"ameriflux_tower_location": 20,
