@@ -2,34 +2,47 @@
 # ~*~ coding: utf8 ~*~
 # pylint: disable=invalid-name
 """Find marginal covariances in space and time."""
-from __future__ import print_function, division
-import itertools
+from __future__ import division, print_function
+
 import calendar
 import datetime
 import inspect
+import itertools
+import operator
+import re
 
-import numpy as np
-from numpy import exp, sin, cos, square, newaxis
-import matplotlib.pyplot as plt
+try:
+    from typing import List
+except ImportError:
+    pass
+
 import bottleneck as bn
-import pandas as pd
-import scipy.optimize
-
-import pyproj
 import cartopy.crs as ccrs
+import dask.array as da
+import dask.config
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+import pyproj
+import scipy.optimize
 import xarray
-from statsmodels.tsa.stattools import acovf, acf
-from statsmodels.tools.eval_measures import aic, aicc, bic, hqic
 from bottleneck import nansum
-# import pymc3 as pm
+from numpy import cos, exp, newaxis, sin, square
+from statsmodels.tools.eval_measures import aic, aicc, bic, hqic
+from statsmodels.tsa.stattools import acf, acovf
 
 import correlation_function_fits
+import flux_correlation_function_fits
 from correlation_function_fits import (
-    CorrelationPart, PartForm,
-    is_valid_combination, get_full_parameter_list
+    CorrelationPart,
+    PartForm,
+    get_full_parameter_list,
+    is_valid_combination,
 )
 from correlation_utils import count_pairs
-import flux_correlation_function_fits
+
+# import pymc3 as pm
+
 
 MINUTES_PER_HOUR = 60
 HOURS_PER_DAY = 24
@@ -57,204 +70,496 @@ FOUR_PI_OVER_YEAR = 4 * PI_OVER_YEAR
 
 PSU = "Pennsylvania State University Department of Meteorology and Atmospheric Science"
 UTC = datetime.timezone.utc
+# from pytz import UTC
 NOW = datetime.datetime.now(UTC)
 NOW_ISO = NOW.isoformat()
+
+dask.config.update(
+    dask.config.config, {"array": {"chunk-size": "2GiB"}, "scheduler": "threads"}
+)
+arry = da.arange(100)
+arry = arry[np.newaxis, :] + arry[::-1, np.newaxis]
+
+############################################################
+# From ameriflux_base_to_netcdf
+AMF_BASE_VAR_NAME_REGEX = re.compile(
+    r"^(?P<physical_name>\w+?)(?P<quality_flag1>_SSITC_TEST)?(?:_PI)?(?:_QC)?"
+    r"(?:_F)?(?:_IU)?(?P<loc_rep_agg>_\d+_\d+_(?:\d+|A)|_\d+)?(?:_(?:SD|N))?$"
+)
+
+NOW_TIME = datetime.datetime.now(UTC).replace(microsecond=0, second=0, minute=0)
+NOW = NOW_TIME.isoformat()
+
+
+def harmonize_variables(ds_lst):
+    # type: (List[xarray.Dataset]) -> List[xarray.Dataset]
+    """Make sure the datasets have the same variables."""
+    variable_dims = {
+        name: da.variables[name].dims for da in ds_lst for name in da.variables
+    }
+    coord_list = frozenset(name for dataset in ds_lst for name in dataset.coords)
+    ancillary_variables = {
+        name: dict(zip(dataset.variables[name].dims, dataset.variables[name].shape))
+        for dataset in ds_lst
+        for data_var in dataset.data_vars.values()
+        for name in data_var.attrs.get("ancillary_variables", "").split()
+        if name in data_var.coords
+    }
+    result = [dataset.copy() for dataset in ds_lst if arry.size > 0]
+    for dataset in result:
+        for variable_name, variable_dim_list in variable_dims.items():
+            if variable_name not in dataset.variables and all(
+                dim in dataset.dims for dim in variable_dim_list
+            ):
+                new_variable = (
+                    variable_dim_list,
+                    np.full(
+                        tuple(
+                            dataset.dims[variable_dim_name]
+                            for variable_dim_name in variable_dim_list
+                        ),
+                        np.nan,
+                        dtype="f4",
+                    ),
+                )
+                if variable_name not in coord_list:
+                    dataset[variable_name] = new_variable
+                else:
+                    dataset.coords[variable_name] = new_variable
+        for aux_name, aux_dims in ancillary_variables.items():
+            if aux_name not in dataset.coords:
+                dataset.coords[aux_name] = (
+                    aux_dims,
+                    np.full(
+                        tuple(dataset.dims[aux_dim_name] for aux_dim_name in aux_dims),
+                        np.nan,
+                        dtype="f4",
+                    ),
+                )
+            elif "site" not in dataset.coords[aux_name].dims:
+                dataset.coords[aux_name] = dataset.coords[aux_name].expand_dims(
+                    aux_dims
+                )
+    return result
+
+
+def take_var_from_ds(source_dataset, flux_var, apply_qc=False):
+    # type: (xarray.Dataset, str, bool) -> xarray.DataArray
+    """Take var from the dataset, dropping irrelevant aux vars.
+
+    Parameters
+    ----------
+    source_dataset : xarray.Dataset
+        The dataset from which to take the variable
+    flux_var : str
+        The flux variable to extract
+    apply_qc : bool
+        Drop data with bad QC? (>=2)
+
+    Returns
+    -------
+    xarray.DataArray
+    """
+    result = source_dataset[flux_var]
+    to_drop = [
+        name
+        for name in source_dataset.coords
+        if re.sub(AMF_BASE_VAR_NAME_REGEX, r"\g<physical_name>\g<loc_rep_agg>", name)
+        not in [flux_var, name]
+    ]
+    result = result.drop_vars(to_drop)
+    if apply_qc:
+        result = result.where("SSITC_TEST < 2")
+    return result
+
+
+def save_dataset_netcdf(dataset, filename):
+    # type: (xarray.Dataset, str) -> None
+    """Save the dataset as a netcdf.
+
+    Parameters
+    ----------
+    dataset : xarray.Dataset
+        Dataset to save
+    filename : str
+        Name to save it under
+    """
+    # Avoid propagating changes to caller.  I could probably achieve a
+    # similar effect with dataset.set_coords().
+    dataset = dataset.copy()
+
+    date_index = dataset.indexes["TIMESTAMP_START"]
+    dataset.coords["time_bnds"] = xarray.DataArray(
+        np.column_stack(
+            [date_index.values, date_index.values + np.array(1, dtype="m8[h]")]
+        ),
+        dims=("TIMESTAMP_START", "bnds2"),
+        attrs=dict(standard_name="time", coverage_content_type="coordinate"),
+    )
+    # dataset.coords["TIMESTAMP_START"] = xarray.DataArray(
+    #     period_index.start_time,
+    #     dims="TIMESTAMP_START",
+    #     attrs=dict(
+    #         standard_name="time",
+    #         axis="T",
+    #         bounds="time_bnds",
+    #         long_name="start_of_observation_period",
+    #         coverage_content_type="coordinate",
+    #         freq=period_index.freqstr,
+    #     ),
+    # )
+    # # if resolution == "half_hour":
+    # #     dataset.attrs["time_coverage_resolution"] = "P0000-00-00T00:30:00"
+    # # else:
+    # #     dataset.attrs["time_coverage_resolution"] = "P0000-00-00T01:00:00"
+    # dataset.attrs["time_coverage_resolution"] = period_index.freq.delta.isoformat()
+    dataset.attrs["time_coverage_resolution"] = "P0000-00-00T01:00:00"
+    dataset.attrs["time_coverage_start"] = str(
+        min(dataset.coords["TIMESTAMP_START"].values)
+    )
+    dataset.attrs["time_coverage_end"] = str(
+        max(dataset.coords["TIMESTAMP_START"].values)
+    )
+    dataset.attrs["time_coverage_duration"] = operator.sub(
+        *dataset.indexes["TIMESTAMP_START"][[-1, 0]]
+    ).isoformat()
+    dataset.coords["time_written"] = NOW_TIME.time().isoformat()
+    dataset.coords["date_written"] = NOW_TIME.date().isoformat()
+
+    # It's around 50MB/variable, which I can get away without compressing.
+    # If I'm wrong, I can use NCO to change the chunksizes and compress.
+    encoding = {
+        name: {"_FillValue": -9999, "zlib": False} for name in dataset.data_vars
+    }
+    encoding.update({name: {"_FillValue": None} for name in dataset.coords})
+
+    # Set units for time variables with bounds
+    for coord_name in dataset.coords:
+        if "bounds" not in dataset.coords[coord_name].attrs:
+            continue
+
+        if "M8" in dataset.coords[coord_name].dtype.str:
+            start_time = dataset.coords[coord_name].values[0]
+            encoding[coord_name]["units"] = "minutes since {:s}".format(str(start_time))
+            encoding[dataset.coords[coord_name].attrs["bounds"]]["units"] = encoding[
+                coord_name
+            ]["units"]
+
+    dataset.to_netcdf(
+        filename,
+        encoding=encoding,
+        format="NETCDF4",
+        mode="w",
+    )
+
 
 ############################################################
 # Read in flux data
 print("Reading AmeriFlux data", flush=True)
-amf_hour_ds = xarray.open_dataset(
-    "/abl/s0/Continent/dfw5129/ameriflux_netcdf/ameriflux_base_data/output/"
-    "AmeriFlux_single_value_per_tower_hour_data.nc4",
-    chunks={"TIMESTAMP_START": int(HOURS_PER_YEAR),
-            "site": 20},
-).resample(TIMESTAMP_START="1H").mean()
-print("Reading more AmeriFlux data", flush=True)
-amf_half_hour_ds = xarray.open_dataset(
-    "/abl/s0/Continent/dfw5129/ameriflux_netcdf/ameriflux_base_data/output/"
-    "AmeriFlux_single_value_per_tower_half_hour_data.nc4",
-    chunks={"TIMESTAMP_START": int(HOURS_PER_YEAR),
-            "site": 20},
-).resample(TIMESTAMP_START="1H").mean()
-print("Combining AmeriFlux data", flush=True)
-amf_ds = xarray.concat(
-    [amf_hour_ds, amf_half_hour_ds],
-    dim="site"
-).persist()
+DATA_MERGED = True
+if not DATA_MERGED:
+    amf_hour_ds = xarray.open_dataset(
+        "/abl/s0/Continent/dfw5129/ameriflux_netcdf/ameriflux_base_data/output/"
+        "AmeriFlux_all_CO2_fluxes_with_single_estimate_per_tower_hour_data.nc4",
+        chunks={"TIMESTAMP_START": 2 * int(HOURS_PER_YEAR)},
+    ).load()
+    # # It would appear the only way to get a PeriodIndex into a Dataset
+    # # is by conversion from a DataFame
+    # amf_hour_ds.coords["TIMESTAMP_START"] = (
+    #     ("TIMESTAMP_START",),
+    #     amf_hour_ds.indexes["TIMESTAMP_START"].to_period("1H"),
+    #     amf_hour_ds.coords["TIMESTAMP_START"].attrs,
+    #     amf_hour_ds.coords["TIMESTAMP_START"].encoding,
+    # )
+    print("Reading more AmeriFlux data", flush=True)
+    HALF_HOUR_DATA_RESAMPLED = True
+    if not HALF_HOUR_DATA_RESAMPLED:
+        amf_half_hour_ds = xarray.open_dataset(
+            "/abl/s0/Continent/dfw5129/ameriflux_netcdf/ameriflux_base_data/output/"
+            "AmeriFlux_all_CO2_fluxes_with_single_estimate_per_tower_half_hour_data.nc4",
+            chunks={"TIMESTAMP_START": 2 * int(2 * HOURS_PER_YEAR)},
+        ).load()
+        # # amf_half_hour_ds.coords["TIMESTAMP_START"] = (
+        # #     ("TIMESTAMP_START",),
+        # #     amf_half_hour_ds.indexes["TIMESTAMP_START"].to_period("1H"),
+        # #     amf_half_hour_ds.coords["TIMESTAMP_START"].attrs,
+        # #     amf_half_hour_ds.coords["TIMESTAMP_START"].encoding,
+        # # )
+        # time_attrs = amf_half_hour_ds.coords["TIMESTAMP_START"].attrs
+        # amf_half_hour_ds.indexes["TIMESTAMP_START"] = amf_half_hour_ds.indexes[
+        #     "TIMESTAMP_START"
+        # ].to_period("1H")
+        # amf_half_hour_ds.coords["TIMESTAMP_START"].attrs.update(time_attrs)
+        # del time_attrs
+
+        print("Resampling half-hour data", flush=True)
+        amf_half_hour_ds = amf_half_hour_ds.resample(TIMESTAMP_START="1H").mean()
+        print("Rechunking half-hour data", flush=True)
+        amf_half_hour_ds.transpose("site", "TIMESTAMP_START").load()
+        # .chunk(
+        #     {"site": 20, "TIMESTAMP_START": -1}
+        # )
+        print("Loading half-hour data", flush=True)
+        amf_half_hour_ds = amf_half_hour_ds.persist()
+        print("Writing half-hour data to disk", flush=True)
+        save_dataset_netcdf(
+            amf_half_hour_ds,
+            "AmeriFlux_all_CO2_fluxes_with_single_estimate_per_tower_half_hour_data_resampled_to_hourly.nc4",
+        )
+    else:
+        amf_half_hour_ds = xarray.open_dataset(
+            "AmeriFlux_all_CO2_fluxes_with_single_estimate_per_tower_half_hour_data_resampled_to_hourly.nc4"
+        )
+    print("Combining AmeriFlux data", flush=True)
+    amf_ds = (
+        xarray.concat(
+            harmonize_variables(
+                [
+                    amf_hour_ds,
+                    amf_half_hour_ds,
+                ]
+            ),
+            dim="site",
+            fill_value=np.nan,
+        )
+        # .chunk({"ameriflux_tower_location": 25, "TIMESTAMP_START": -1})
+        .persist()
+    )
+    print("Saving AmeriFlux data", flush=True)
+    save_dataset_netcdf(
+        amf_ds,
+        "AmeriFlux_all_CO2_fluxes_with_single_estimate_per_tower_hourly_resampled.nc4",
+    )
+else:
+    amf_ds = xarray.open_dataset(
+        "AmeriFlux_all_CO2_fluxes_with_single_estimate_per_tower_hourly_resampled.nc4"
+    ).persist()
+
+print(amf_ds.coords)
 print("Reading CASA data", flush=True)
-casa_ds = xarray.open_mfdataset(
-    ("/abl/s0/Continent/dfw5129/casa_downscaling/"
-     "20??-??_downscaled_CASA_L2_Ensemble_Mean_Biogenic_NEE_Ameriflux.nc4"),
-    combine="by_coords",
-    chunks={"ameriflux_tower_location": 20,
-            "time": int(HOURS_PER_YEAR)},
-).transpose(
-    "ameriflux_tower_location", "time"
-).persist()
+casa_ds = (
+    xarray.open_mfdataset(
+        (
+            "/abl/s0/Continent/dfw5129/casa_downscaling/"
+            "20??-??_downscaled_CASA_L2_Ensemble_Mean_Biogenic_NEE_Ameriflux.nc4"
+        ),
+        combine="by_coords",
+        chunks={"ameriflux_tower_location": 20},
+    )
+    .transpose("ameriflux_tower_location", "time")
+    .persist()
+)
+print(casa_ds.coords)
 
 # Pull out matching flux data
 print("Finding matching data points", flush=True)
-sites_in_both = sorted(list(set(casa_ds.coords["Site_Id"].values) &
-                            set(amf_ds.coords["site"].values)))
+sites_in_both = sorted(
+    list(set(casa_ds.coords["SiteFID"].values) & set(amf_ds.coords["site"].values))
+)
 times_in_both = pd.DatetimeIndex(
-    sorted(list(set(casa_ds.coords["time"].values) &
-                set(amf_ds.coords["TIMESTAMP_START"].values)))
+    sorted(
+        list(
+            set(casa_ds.coords["time"].values)
+            & set(amf_ds.coords["TIMESTAMP_START"].values)
+        )
+    )
 )
 print("Extracting matching data points", flush=True)
-amf_data_rect = amf_ds["ameriflux_carbon_dioxide_flux_estimate"].sel(
-    site=sites_in_both, TIMESTAMP_START=times_in_both
-).astype(np.float32).transpose("site", "TIMESTAMP_START").load()
-casa_data_rect = casa_ds["NEE"].set_index(
-    ameriflux_tower_location="Site_Id"
-).sel(
-    ameriflux_tower_location=sites_in_both,
-    time=times_in_both,
-).astype(np.float32).load()
+amf_data_rect = (
+    amf_ds["ameriflux_carbon_dioxide_flux_estimate"]
+    .sel(site=sites_in_both, TIMESTAMP_START=times_in_both)
+    .astype(np.float32)
+    .transpose("site", "TIMESTAMP_START")
+    .load()
+)
+casa_data_rect = (
+    casa_ds["NEE"]
+    .set_index(ameriflux_tower_location="SiteFID")
+    .sel(
+        ameriflux_tower_location=sites_in_both,
+        time=times_in_both,
+    )
+    .astype(np.float32)
+    .load()
+)
 
 for name in list(casa_data_rect.coords):
     if name not in casa_ds.coords:
         del casa_data_rect.coords[name]
 
 print("Creating big dataset", flush=True)
-matching_data_ds = xarray.Dataset(
-    {
-        "ameriflux_fluxes": amf_data_rect,
-        "casa_fluxes": casa_data_rect.rename(
-            ameriflux_tower_location="site",
-            time="TIMESTAMP_START",
-        ).transpose("site", "TIMESTAMP_START")
-    },
-).persist().rename(TIMESTAMP_START="time")
-matching_data_ds["flux_difference"] = (
-    matching_data_ds["ameriflux_fluxes"] -
-    matching_data_ds["casa_fluxes"]
+matching_data_ds = (
+    xarray.Dataset(
+        {
+            "ameriflux_fluxes": amf_data_rect,
+            "casa_fluxes": casa_data_rect.rename(
+                ameriflux_tower_location="site",
+                time="TIMESTAMP_START",
+            )
+            .transpose("site", "TIMESTAMP_START")
+            .drop_vars("UTC_OFFSET"),
+        },
+    )
+    .persist()
+    .rename(TIMESTAMP_START="time")
 )
-matching_data_ds["flux_difference"].attrs.update({
-    "long_name": "ameriflux_carbon_dioxide_flux_minus_casa_carbon_dioxide_flux",
-    "units": "umol/m^2/s",
-})
+matching_data_ds["flux_difference"] = (
+    matching_data_ds["ameriflux_fluxes"] - matching_data_ds["casa_fluxes"]
+)
+matching_data_ds["flux_difference"].attrs.update(
+    {
+        "long_name": "ameriflux_carbon_dioxide_flux_minus_casa_carbon_dioxide_flux",
+        "units": "umol/m^2/s",
+    }
+)
 # matching_data_ds.coords["time_bnds"] = amf_hour_ds.coords["time_bnds"]
 # matching_data_ds.coords["TIMESTAMP_START"].attrs.update(
 #     {"valid_min": 0,
 #      "valid_max": 15 * HOURS_PER_YEAR}
 # )
 
-matching_data_ds.attrs.update(dict(
-    history="created from processed Ameriflux data files and 500m CASA outputs downscaled using ERA5",
-    institution=PSU,
-    title="Ameriflux minus CASA carbon dioxide flux differences",
-    acknowledgement="CASA: ACT-America\nERA5: ECMWF\nAmeriFlux Towers: {ameriflux_sources:s}"
-    .format(ameriflux_sources=""),
-    cdm_data_type="Station",
-    Conventions="CF-1.7,ACDD-1.3",
-    creator_email="dfw5129@psu.edu",
-    creator_institution=PSU,
-    creator_name="Daniel Wesloh",
-    creator_type="person",
-    date_metadata_modified=NOW_ISO,
-    date_modified=NOW_ISO,
-    date_created=NOW_ISO,
-    date_written=NOW.date().isoformat(),
-    time_written=NOW.time().replace(microsecond=0).isoformat(),
-    geospatial_lat_min=matching_data_ds.coords["Latitude"].min().values,
-    geospatial_lat_max=matching_data_ds.coords["Latitude"].max().values,
-    geospatial_lat_units="degrees_north",
-    geospatial_lon_min=matching_data_ds.coords["Longitude"].min().values,
-    geospatial_lon_max=matching_data_ds.coords["Longitude"].max().values,
-    geospatial_lon_units="degrees_east",
-    product_version=1,
-    program="NASA EVS",
-    project="Atmospheric Carbon and Transport-America",
-    source="CASA from Yu et al. (2020), retrieved from ORNL; AmeriFlux data from various contributors",
-    standard_name_vocabulary="CF Standard Name table v70",
-    time_coverage_start=matching_data_ds.indexes["time"][0].isoformat(),
-    time_coverage_end=matching_data_ds.indexes["time"][-1].isoformat(),
-    time_coverage_duration=(
-        matching_data_ds.indexes["time"][-1] -
-        matching_data_ds.indexes["time"][0]
-    ).isoformat(),
-    # "P0006-08-30T00:00:00",
-    time_coverage_resolution="PT1H",
-    ncei_template_version="NCEI_NetCDF_TimeSeries_Orthogonal_Template_v2.0",
-    featureType="timeSeries",
-))
-encoding = {name: {"_FillValue": -99, "zlib": True}
-            for name in matching_data_ds.data_vars}
-encoding.update({name: {"_FillValue": None}
-                 for name in matching_data_ds.coords})
+matching_data_ds.attrs.update(
+    dict(
+        history="created from processed Ameriflux data files and 500m CASA outputs downscaled using ERA5",
+        institution=PSU,
+        title="Ameriflux minus CASA carbon dioxide flux differences",
+        acknowledgement="CASA: ACT-America\nERA5: ECMWF\nAmeriFlux Towers: {ameriflux_sources:s}".format(
+            ameriflux_sources=""
+        ),
+        cdm_data_type="Station",
+        Conventions="CF-1.7,ACDD-1.3",
+        creator_email="dfw5129@psu.edu",
+        creator_institution=PSU,
+        creator_name="Daniel Wesloh",
+        creator_type="person",
+        date_metadata_modified=NOW_ISO,
+        date_modified=NOW_ISO,
+        date_created=NOW_ISO,
+        date_written=NOW_TIME.date().isoformat(),
+        time_written=NOW_TIME.time().replace(microsecond=0).isoformat(),
+        geospatial_lat_min=matching_data_ds.coords["Latitude"].min().values,
+        geospatial_lat_max=matching_data_ds.coords["Latitude"].max().values,
+        geospatial_lat_units="degrees_north",
+        geospatial_lon_min=matching_data_ds.coords["Longitude"].min().values,
+        geospatial_lon_max=matching_data_ds.coords["Longitude"].max().values,
+        geospatial_lon_units="degrees_east",
+        product_version=1,
+        program="NASA EVS",
+        project="Atmospheric Carbon and Transport-America",
+        source="CASA from Yu et al. (2020), retrieved from ORNL; AmeriFlux data from various contributors",
+        standard_name_vocabulary="CF Standard Name table v70",
+        time_coverage_start=matching_data_ds.indexes["time"][0].isoformat(),
+        time_coverage_end=matching_data_ds.indexes["time"][-1].isoformat(),
+        time_coverage_duration=(
+            matching_data_ds.indexes["time"][-1] - matching_data_ds.indexes["time"][0]
+        ).isoformat(),
+        # "P0006-08-30T00:00:00",
+        time_coverage_resolution="PT1H",
+        ncei_template_version="NCEI_NetCDF_TimeSeries_Orthogonal_Template_v2.0",
+        featureType="timeSeries",
+    )
+)
+encoding = {
+    name: {"_FillValue": -99, "zlib": True} for name in matching_data_ds.data_vars
+}
+encoding.update({name: {"_FillValue": None} for name in matching_data_ds.coords})
 encoding["time"]["units"] = "hours since 2003-01-01T00:00:00+00:00"
 encoding["time"]["dtype"] = np.int32
+
+print("Saving big dataset", flush=True)
 matching_data_ds.to_netcdf(
     "ameriflux-and-casa-matching-data.nc4",
-    encoding=encoding, engine="h5netcdf",
+    encoding=encoding,
+    engine="h5netcdf",
 )
 
-matching_data_ds.coords["month"] = matching_data_ds.indexes["time"].month
-matching_data_ds.coords["hour"] = matching_data_ds.indexes["time"].hour
+matching_data_ds.coords["month"] = matching_data_ds.coords["time"].dt.month
+matching_data_ds.coords["hour"] = matching_data_ds.coords["time"].dt.hour
 matching_data_ds.coords["month_hour"] = (
-    matching_data_ds.coords["month"] * 1000 +
-    matching_data_ds.coords["hour"]
+    matching_data_ds.coords["month"] * 1000 + matching_data_ds.coords["hour"]
 )
 
-matching_data_month_hour_ds = matching_data_ds.groupby(
-    "month_hour"
-).mean().set_index(month_hour=["month", "hour"]).unstack()
-matching_data_month_ds = matching_data_ds.groupby(
-    "month"
-).mean()
+matching_data_month_hour_long = matching_data_ds.groupby("month_hour").mean()
+matching_data_month_hour_long.coords["month"] = (
+    matching_data_month_hour_long.coords["month_hour"] // 1000
+)
+matching_data_month_hour_long.coords["hour"] = (
+    matching_data_month_hour_long.coords["month_hour"] % 1000
+)
+
+matching_data_month_hour_ds = matching_data_month_hour_long.set_index(
+    month_hour=["month", "hour"]
+).unstack()
+matching_data_month_ds = matching_data_ds.groupby("month").mean()
 
 matching_data_month_hour_ds.coords["climatology_bounds_approximation"] = (
     ["month", "hour", "bounds2"],
-    np.array([
+    np.array(
         [
             [
-                pd.Timestamp(
-                    "2003-{month.values:02d}-01T{hour.values:02d}:00:00+00:00"
-                    .format(month=month, hour=hour)
-                ),
-                pd.Timestamp(
-                    "2018-{month.values:02d}-28T{hour.values:02d}:00:00+00:00"
-                    .format(month=month, hour=hour)
-                )
+                [
+                    pd.Timestamp(
+                        "2003-{month.values:02d}-01T{hour.values:02d}:00:00+00:00".format(
+                            month=month, hour=hour
+                        )
+                    ),
+                    pd.Timestamp(
+                        "2018-{month.values:02d}-28T{hour.values:02d}:00:00+00:00".format(
+                            month=month, hour=hour
+                        )
+                    ),
+                ]
+                for hour in matching_data_month_hour_ds.coords["hour"]
             ]
-            for hour in matching_data_month_hour_ds.coords["hour"]
+            for month in matching_data_month_hour_ds.coords["month"]
         ]
-        for month in matching_data_month_hour_ds.coords["month"]
-    ]).astype("M8[ns]"),
-    {"standard_name": "climatology_bounds"}
+    ).astype("M8[ns]"),
+    {"standard_name": "climatology_bounds"},
 )
 
 matching_data_month_ds.coords["climatology_bounds_approximation"] = (
     ["month", "bounds2"],
-    np.array([
+    np.array(
         [
-            pd.Timestamp(
-                "2003-{month.values:02d}-01T00:00:00+00:00".format(month=month)
-            ),
-            pd.Timestamp(
-                "2018-{month.values:02d}-28T23:59:59+00:00".format(month=month)
-            )
+            [
+                pd.Timestamp(
+                    "2003-{month.values:02d}-01T00:00:00+00:00".format(month=month)
+                ),
+                pd.Timestamp(
+                    "2018-{month.values:02d}-28T23:59:59+00:00".format(month=month)
+                ),
+            ]
+            for month in matching_data_month_hour_ds.coords["month"]
         ]
-        for month in matching_data_month_hour_ds.coords["month"]
-    ]).astype("M8[ns]"),
-    {"standard_name": "climatology_bounds"}
+    ).astype("M8[ns]"),
+    {"standard_name": "climatology_bounds"},
 )
 
+del encoding["time"], encoding["height"]
 matching_data_month_hour_ds.to_netcdf(
     "ameriflux-and-casa-all-towers-daily-cycle-by-month.nc4",
-    encoding=encoding, engine="h5netcdf",
+    encoding=encoding,
+    engine="h5netcdf",
 )
 matching_data_month_ds.to_netcdf(
     "ameriflux-and-casa-all-towers-seasonal-cycle.nc4",
-    encoding=encoding, engine="h5netcdf",
+    encoding=encoding,
+    engine="h5netcdf",
 )
 
-amf_data = amf_data_rect.stack(
-    data_point=("site", "TIMESTAMP_START")
-).dropna("data_point").persist()
-casa_data = casa_data_rect.sel(
-    ameriflux_tower_location=amf_data.coords["site"], time=amf_data.coords["TIMESTAMP_START"]
-).dropna("data_point").persist()
+amf_data = (
+    amf_data_rect.stack(data_point=("site", "TIMESTAMP_START"))
+    .dropna("data_point")
+    .persist()
+)
+casa_data = (
+    casa_data_rect.sel(
+        ameriflux_tower_location=amf_data.coords["site"],
+        time=amf_data.coords["TIMESTAMP_START"],
+    )
+    .dropna("data_point")
+    .persist()
+)
 
 # Find differences
 difference = (amf_data.load() - casa_data.load()).dropna("data_point").persist()
@@ -262,7 +567,9 @@ difference = (amf_data.load() - casa_data.load()).dropna("data_point").persist()
 coords = np.empty((difference.shape[0], 3), dtype=np.float32)
 values = np.array(difference.values, dtype=np.float32)
 
-data_times_int = difference.coords["TIMESTAMP_START"].values.astype("M8[m]").astype("i8")
+data_times_int = (
+    difference.coords["TIMESTAMP_START"].values.astype("M8[m]").astype("i8")
+)
 data_times_int -= data_times_int[0]
 coords[:, 0] = data_times_int.astype(np.float32)
 coords[:, 0] /= MINUTES_PER_DAY
@@ -270,17 +577,20 @@ coords[:, 0] /= MINUTES_PER_DAY
 coords[:, 1:] = PROJECTION.transform_points(
     PROJECTION.as_geodetic(),
     difference.coords["Longitude"].values,
-    difference.coords["Latitude"].values
+    difference.coords["Latitude"].values,
 )[:, :2]
 # Convert to kilometers
 coords[:, 1:] /= 1e3
 
 to_delete = [
-    coord_name for coord_name in difference.coords
-    if (coord_name not in difference.dims and
-        "LOCATION" not in coord_name and
-        "lat" not in coord_name.lower()
-        and "lon" not in coord_name.lower())
+    coord_name
+    for coord_name in difference.coords
+    if (
+        coord_name not in difference.dims
+        and "LOCATION" not in coord_name
+        and "lat" not in coord_name.lower()
+        and "lon" not in coord_name.lower()
+    )
 ]
 for coord_name in to_delete:
     del difference.coords[coord_name]
@@ -288,26 +598,22 @@ for coord_name in to_delete:
 hour_data = np.column_stack([coords, values.astype(np.float32)])
 # assert amf_data.attrs["units"] == "umol/m2/s"
 # assert casa_data.attrs["units"] == "umol/m2/s"
-hour_df = pd.DataFrame(hour_data, columns=["time_days", "x_km", "y_km", "flux_diff_umol_m2_s"])
+hour_df = pd.DataFrame(
+    hour_data, columns=["time_days", "x_km", "y_km", "flux_diff_umol_m2_s"]
+)
 hour_df.to_csv("ameriflux_minus_casa_all_towers.csv")
 
 ############################################################
 # Find distances between all pairs of points
 # Will be in meters
 distance_matrix = pd.DataFrame(
-    index=amf_ds.indexes["site"],
-    columns=amf_ds.indexes["site"],
-    dtype=np.float64
+    index=amf_ds.indexes["site"], columns=amf_ds.indexes["site"], dtype=np.float64
 )
 vegtype_match_matrix = pd.DataFrame(
-    index=amf_ds.indexes["site"],
-    columns=amf_ds.indexes["site"],
-    dtype=bool
+    index=amf_ds.indexes["site"], columns=amf_ds.indexes["site"], dtype=bool
 )
 koeppen_match_matrix = pd.DataFrame(
-    index=amf_ds.indexes["site"],
-    columns=amf_ds.indexes["site"],
-    dtype=bool
+    index=amf_ds.indexes["site"], columns=amf_ds.indexes["site"], dtype=bool
 )
 site_coords = amf_ds.coords["site"].load()
 # Very slow
@@ -317,15 +623,14 @@ for site1, site2 in itertools.product(site_coords, site_coords):
     site2_name = site2.values[()]
     distance_matrix.loc[site1_name, site2_name] = GEOD_line_length(
         [site1.coords["LOCATION_LONG"], site2.coords["LOCATION_LONG"]],
-        [site1.coords["LOCATION_LAT"], site2.coords["LOCATION_LAT"]]
+        [site1.coords["LOCATION_LAT"], site2.coords["LOCATION_LAT"]],
     )
     vegtype_match_matrix.loc[site1_name, site2_name] = (
-        site1.coords["IGBP"].values ==
-        site2.coords["IGBP"].values
+        site1.coords["IGBP"].values == site2.coords["IGBP"].values
     )
     koeppen_match_matrix.loc[site1_name, site2_name] = (
-        amf_ds.coords["CLIMATE_KOEPPEN"].sel(site=site1_name).values ==
-        amf_ds.coords["CLIMATE_KOEPPEN"].sel(site=site2_name).values
+        amf_ds.coords["CLIMATE_KOEPPEN"].sel(site=site1_name).values
+        == amf_ds.coords["CLIMATE_KOEPPEN"].sel(site=site2_name).values
     )
 
 # Convert distance to kilometers
@@ -333,113 +638,147 @@ for site1, site2 in itertools.product(site_coords, site_coords):
 distance_matrix /= 1000
 distance_matrix.to_csv("ameriflux-all-towers-distance-matrix-km.csv")
 vegtype_match_matrix.to_csv("ameriflux-all-towers-vegetation-type-match-matrix.csv")
-koeppen_match_matrix.to_csv("ameriflux-all-towers-koeppen-classification-match-matrix.csv")
+koeppen_match_matrix.to_csv(
+    "ameriflux-all-towers-koeppen-classification-match-matrix.csv"
+)
 
 ############################################################
 # Make a times-by-sites array of the differences
 difference_df_rect = difference.to_dataframe(
     name="ameriflux_minus_casa_hour_towers_umol_m2_s"
 )["ameriflux_minus_casa_hour_towers_umol_m2_s"].unstack(0)
-difference_df_rect.to_csv(
-    "ameriflux-minus-casa-all-towers-difference-data-rect.csv"
-)
+difference_df_rect.to_csv("ameriflux-minus-casa-all-towers-difference-data-rect.csv")
 
-difference_xarray = difference.to_dataset(name="ameriflux_minus_casa_carbon_dioxide_flux")
+difference_xarray = difference.to_dataset(
+    name="ameriflux_minus_casa_carbon_dioxide_flux"
+)
 difference_rect_xarray = difference_xarray.unstack("data_point")
 for name in ("LOCATION_LAT", "LOCATION_LONG", "LOCATION_ELEV", "Longitude", "Latitude"):
-    difference_rect_xarray.coords[name] = difference_rect_xarray.coords[name].mean("TIMESTAMP_START")
+    difference_rect_xarray.coords[name] = difference_rect_xarray.coords[name].mean(
+        "TIMESTAMP_START"
+    )
 
-difference_rect_xarray["ameriflux_minus_casa_carbon_dioxide_flux"] = (
-    difference_rect_xarray["ameriflux_minus_casa_carbon_dioxide_flux"].astype(np.float32)
+difference_rect_xarray[
+    "ameriflux_minus_casa_carbon_dioxide_flux"
+] = difference_rect_xarray["ameriflux_minus_casa_carbon_dioxide_flux"].astype(
+    np.float32
 )
-difference_rect_xarray["ameriflux_minus_casa_carbon_dioxide_flux"].attrs.update(dict(
-    units="umol/m2/s",
-    long_name="ameriflux_minus_casa_surface_upward_mole_flux_of_carbon_dioxide",
-    coverage_content_type="modelResult",
-))
+difference_rect_xarray["ameriflux_minus_casa_carbon_dioxide_flux"].attrs.update(
+    dict(
+        units="umol/m2/s",
+        long_name="ameriflux_minus_casa_surface_upward_mole_flux_of_carbon_dioxide",
+        coverage_content_type="modelResult",
+    )
+)
 for name in ("LOCATION_LAT", "Latitude"):
-    difference_rect_xarray.coords[name].attrs.update(dict(
-        units="degrees_north",
-        standard_name="latitude",
-        long_name="latitude",
-        valid_range=(0., 90.),
-    ))
+    difference_rect_xarray.coords[name].attrs.update(
+        dict(
+            units="degrees_north",
+            standard_name="latitude",
+            long_name="latitude",
+            valid_range=(0.0, 90.0),
+        )
+    )
 
 for name in ("LOCATION_LONG", "Longitude"):
-    difference_rect_xarray.coords[name].attrs.update(dict(
-        units="degrees_east",
-        standard_name="longitude",
-        long_name="longitude",
-        valid_range=(-180., 360.),
-    ))
+    difference_rect_xarray.coords[name].attrs.update(
+        dict(
+            units="degrees_east",
+            standard_name="longitude",
+            long_name="longitude",
+            valid_range=(-180.0, 360.0),
+        )
+    )
 
 difference_rect_xarray.coords["site_id"] = difference_rect_xarray.coords["site"]
-difference_rect_xarray.coords["site_id"].attrs.update(dict(
-    cf_role="timeseries_id",
-    long_name="AmeriFlux_station_id",
-))
+difference_rect_xarray.coords["site_id"].attrs.update(
+    dict(
+        cf_role="timeseries_id",
+        long_name="AmeriFlux_station_id",
+    )
+)
 difference_rect_xarray.coords["site"] = np.arange(difference_rect_xarray.dims["site"])
-difference_rect_xarray.coords["TIMESTAMP_START"].attrs.update(dict(
-    axis="T",
-    standard_name="time",
-    long_name="start_of_ameriflux_averaging_window",
-    bounds="time_bnds",
-))
+difference_rect_xarray.coords["TIMESTAMP_START"].attrs.update(
+    dict(
+        axis="T",
+        standard_name="time",
+        long_name="start_of_ameriflux_averaging_window",
+        bounds="time_bnds",
+    )
+)
 
-for name in ("IGBP", "CLIMATE_KOEPPEN", "SITE_NAME", "IGBP_COMMENT",
-             "LOCATION_ELEV", "TERRAIN", "SITE_DESC", "time_bnds"):
+for name in (
+    "IGBP",
+    "CLIMATE_KOEPPEN",
+    "SITE_NAME",
+    "IGBP_COMMENT",
+    "LOCATION_ELEV",
+    "TERRAIN",
+    "SITE_DESC",
+    "time_bnds",
+):
     difference_rect_xarray.coords[name] = amf_ds.coords[name]
 
 for name in ("SITE_FUNDING", "ACKNOWLEDGEMENT"):
     difference_rect_xarray.coords["AMERIFLUX_" + name] = amf_ds.coords[name]
 
-difference_rect_xarray.attrs.update(dict(
-    history="created from processed Ameriflux data files and 500m CASA outputs downscaled using ERA5",
-    institution=PSU,
-    title="Ameriflux minus CASA carbon dioxide flux differences",
-    acknowledgement="CASA: ACT-America\nERA5: ECMWF\nAmeriFlux Towers: {ameriflux_sources:s}"
-    .format(ameriflux_sources=""),
-    cdm_data_type="Station",
-    Conventions="CF-1.7,ACDD-1.3",
-    creator_email="dfw5129@psu.edu",
-    creator_institution=PSU,
-    creator_name="Daniel Wesloh",
-    creator_type="person",
-    date_metadata_modified=NOW_ISO,
-    date_modified=NOW_ISO,
-    date_created=NOW_ISO,
-    date_written=NOW.date().isoformat(),
-    time_written=NOW.time().replace(microsecond=0).isoformat(),
-    geospatial_lat_min=difference_rect_xarray.coords["Latitude"].min().values,
-    geospatial_lat_max=difference_rect_xarray.coords["Latitude"].max().values,
-    geospatial_lat_units="degrees_north",
-    geospatial_lon_min=difference_rect_xarray.coords["Longitude"].min().values,
-    geospatial_lon_max=difference_rect_xarray.coords["Longitude"].max().values,
-    geospatial_lon_units="degrees_east",
-    product_version=1,
-    program="NASA EVS",
-    project="Atmospheric Carbon and Transport-America",
-    source="CASA from Yu et al. (2020), retrieved from ORNL; AmeriFlux data from various contributors",
-    standard_name_vocabulary="CF Standard Name table v70",
-    time_coverage_start=difference_rect_xarray.indexes["TIMESTAMP_START"][0].isoformat(),
-    time_coverage_end=difference_rect_xarray.indexes["TIMESTAMP_START"][-1].isoformat(),
-    time_coverage_duration=(
-        difference_rect_xarray.indexes["TIMESTAMP_START"][-1] -
-        difference_rect_xarray.indexes["TIMESTAMP_START"][0]
-    ).isoformat(),
-    # "P0006-08-30T00:00:00",
-    time_coverage_resolution="PT1H",
-    ncei_template_version="NCEI_NetCDF_TimeSeries_Orthogonal_Template_v2.0",
-    featureType="timeSeries",
-))
+difference_rect_xarray.attrs.update(
+    dict(
+        history="created from processed Ameriflux data files and 500m CASA outputs downscaled using ERA5",
+        institution=PSU,
+        title="Ameriflux minus CASA carbon dioxide flux differences",
+        acknowledgement="CASA: ACT-America\nERA5: ECMWF\nAmeriFlux Towers: {ameriflux_sources:s}".format(
+            ameriflux_sources=""
+        ),
+        cdm_data_type="Station",
+        Conventions="CF-1.7,ACDD-1.3",
+        creator_email="dfw5129@psu.edu",
+        creator_institution=PSU,
+        creator_name="Daniel Wesloh",
+        creator_type="person",
+        date_metadata_modified=NOW_ISO,
+        date_modified=NOW_ISO,
+        date_created=NOW_ISO,
+        date_written=NOW_TIME.date().isoformat(),
+        time_written=NOW_TIME.time().replace(microsecond=0).isoformat(),
+        geospatial_lat_min=difference_rect_xarray.coords["Latitude"].min().values,
+        geospatial_lat_max=difference_rect_xarray.coords["Latitude"].max().values,
+        geospatial_lat_units="degrees_north",
+        geospatial_lon_min=difference_rect_xarray.coords["Longitude"].min().values,
+        geospatial_lon_max=difference_rect_xarray.coords["Longitude"].max().values,
+        geospatial_lon_units="degrees_east",
+        product_version=1,
+        program="NASA EVS",
+        project="Atmospheric Carbon and Transport-America",
+        source="CASA from Yu et al. (2020), retrieved from ORNL; AmeriFlux data from various contributors",
+        standard_name_vocabulary="CF Standard Name table v70",
+        time_coverage_start=difference_rect_xarray.indexes["TIMESTAMP_START"][
+            0
+        ].isoformat(),
+        time_coverage_end=difference_rect_xarray.indexes["TIMESTAMP_START"][
+            -1
+        ].isoformat(),
+        time_coverage_duration=(
+            difference_rect_xarray.indexes["TIMESTAMP_START"][-1]
+            - difference_rect_xarray.indexes["TIMESTAMP_START"][0]
+        ).isoformat(),
+        # "P0006-08-30T00:00:00",
+        time_coverage_resolution="PT1H",
+        ncei_template_version="NCEI_NetCDF_TimeSeries_Orthogonal_Template_v2.0",
+        featureType="timeSeries",
+    )
+)
 
-encoding = {name: {"_FillValue": -99, "zlib": True}
-            for name in difference_rect_xarray.data_vars}
-encoding.update({name: {"_FillValue": None}
-                 for name in difference_rect_xarray.coords})
+encoding = {
+    name: {"_FillValue": -99, "zlib": True} for name in difference_rect_xarray.data_vars
+}
+encoding.update({name: {"_FillValue": None} for name in difference_rect_xarray.coords})
 
-difference_rect_xarray.to_netcdf("ameriflux_minus_casa_hour_tower_data.nc4",
-                                 encoding=encoding, format="NETCDF4_CLASSIC")
+difference_rect_xarray.to_netcdf(
+    "ameriflux_minus_casa_hour_tower_data.nc4",
+    encoding=encoding,
+    format="NETCDF4_CLASSIC",
+)
 
 bn_nansum = bn.nansum
 np_square = np.square
@@ -451,42 +790,44 @@ length_opt = scipy.optimize.minimize_scalar(
     args=(
         difference_df_rect.corr().values,
         distance_matrix.loc[
-            difference_df_rect.columns,
-            difference_df_rect.columns
-        ].values
+            difference_df_rect.columns, difference_df_rect.columns
+        ].values,
     ),
-    bounds=(1, 1e4), method="bounded"
+    bounds=(1, 1e4),
+    method="bounded",
 )
 print("Optimizing length alone:\n", length_opt)
 
 length_with_nugget_opt = scipy.optimize.minimize(
-    fun=lambda params, corr, dist: bn_nansum(np_square(
-        corr - (
-            params[0] * np_exp(-dist / params[1]) +
-            (1 - params[0])
-        )
-    )),
+    fun=lambda params, corr, dist: bn_nansum(
+        np_square(corr - (params[0] * np_exp(-dist / params[1]) + (1 - params[0])))
+    ),
     # Nondimensional, kilometers
-    x0=[.8, 200],
+    x0=[0.8, 200],
     args=(
         difference_df_rect.corr().values,
         distance_matrix.loc[
             difference_df_rect.columns,
             difference_df_rect.columns,
-        ].values
+        ].values,
     ),
 )
-print("Optimizing length with nugget effect:",
-      "\nWeight on correlated part:", length_with_nugget_opt.x[0],
-      "\nCorrelation length:", length_with_nugget_opt.x[1],
-      "\nConvergence:", length_with_nugget_opt.success, length_with_nugget_opt.message,
-      "\nInverse Hessian:\n", length_with_nugget_opt.hess_inv)
+print(
+    "Optimizing length with nugget effect:",
+    "\nWeight on correlated part:",
+    length_with_nugget_opt.x[0],
+    "\nCorrelation length:",
+    length_with_nugget_opt.x[1],
+    "\nConvergence:",
+    length_with_nugget_opt.success,
+    length_with_nugget_opt.message,
+    "\nInverse Hessian:\n",
+    length_with_nugget_opt.hess_inv,
+)
 
 # Scatter plot of actual correlations and line plots of candidates
 plotting_distances = np.linspace(
-    0,
-    np.ceil(distance_matrix.max().max() / 250) * 250,
-    100
+    0, np.ceil(distance_matrix.max().max() / 250) * 250, 100
 )
 fig, axes = plt.subplots(2, 1, sharex=True, sharey=True)
 axes[0].scatter(
@@ -507,14 +848,16 @@ axes[0].set_ylabel("Empirical correlations")
 # axes[1].plot("Exponential fit")
 axes[1].plot(
     plotting_distances,
-    1 + length_with_nugget_opt.x[0] * np.expm1(-plotting_distances / length_with_nugget_opt.x[1]),
+    1
+    + length_with_nugget_opt.x[0]
+    * np.expm1(-plotting_distances / length_with_nugget_opt.x[1]),
 )
 axes[0].set_xlim(0, plotting_distances[-1])
 axes[0].set_ylim(-0.5, 1)
 fig.savefig("ameriflux-minus-casa-all-towers-spatial-correlations.pdf")
 plt.close(fig)
 
-distance_matrix_matched =     distance_matrix.loc[
+distance_matrix_matched = distance_matrix.loc[
     difference_df_rect.columns,
     difference_df_rect.columns,
 ]
@@ -536,7 +879,9 @@ matching_vegtype_index = vegtype_match_matrix.loc[
     difference_df_rect.columns,
 ]
 axes[1].hist2d(
-    distance_matrix_matched.values[matching_vegtype_index & correlations_not_nan].reshape(-1),
+    distance_matrix_matched.values[
+        matching_vegtype_index & correlations_not_nan
+    ].reshape(-1),
     corr_matrix.values[matching_vegtype_index & correlations_not_nan].reshape(-1),
     range=[[0, plotting_distances[-1]], [-1, 1]],
     bins=[30, 10],
@@ -549,7 +894,9 @@ matching_koeppen_index = koeppen_match_matrix.loc[
     difference_df_rect.columns,
 ]
 axes[2].hist2d(
-    distance_matrix_matched.values[matching_koeppen_index & correlations_not_nan].reshape(-1),
+    distance_matrix_matched.values[
+        matching_koeppen_index & correlations_not_nan
+    ].reshape(-1),
     corr_matrix.values[matching_koeppen_index & correlations_not_nan].reshape(-1),
     range=[[0, plotting_distances[-1]], [-1, 1]],
     bins=[30, 10],
@@ -564,9 +911,7 @@ axes_flat = axes.reshape(-1, order="C")
 df_index_months = difference_df_rect.index.month
 for month_index in range(MONTHS_PER_YEAR):
     month_number = month_index + 1
-    month_data = difference_df_rect.loc[
-        df_index_months == month_number, :
-    ]
+    month_data = difference_df_rect.loc[df_index_months == month_number, :]
     ax = axes_flat[month_index]
     ax.hist2d(
         distance_matrix.loc[
@@ -588,7 +933,7 @@ plt.close(fig)
 
 ############################################################
 # Find temporal autocorrelations, autocovariances, and pairs per lag.
-acovf_index = pd.timedelta_range(start=0, freq="1H", periods=24 * 365 * 8)
+acovf_index = pd.timedelta_range(start=0, freq="1H", periods=24 * 365 * 12)
 acovf_data = pd.DataFrame(index=acovf_index)
 acf_data = pd.DataFrame(index=acovf_index)
 # acf_width = pd.DataFrame(index=acovf_index)
@@ -602,7 +947,7 @@ for column in difference_df_rect.columns:
     acovf_col = acovf(col_data, missing="conservative")
     nlags = len(acovf_col)
     acovf_data.loc[acovf_index[:nlags], column] = acovf_col
-    acf_col = acf(col_data, missing="conservative", nlags=nlags, unbiased=True)
+    acf_col = acf(col_data, missing="conservative", nlags=nlags, adjusted=True)
     acf_data.loc[acovf_index[:nlags], column] = acf_col
     # varacf = np.ones(nlags + 1) / col_data.count()
     # np.ones(acf_data.shape) / acf_data.count()[np.newaxis, :] * (1 + 2 * acf_data.cumsum() ** 2)
@@ -622,10 +967,12 @@ acovf_data.to_csv("ameriflux-minus-casa-hour-towers-autocovariance-functions.csv
 # time_in_days = time_in_days[not_nan]
 
 single_time_opt = scipy.optimize.minimize_scalar(
-    lambda length, acorr, times: nansum(square(
-            acorr - exp(-times / length)[:, newaxis]
-    )), args=(to_fit.values, time_in_days),
-    method="bounded", bounds=(0, 365*5)
+    lambda length, acorr, times: nansum(
+        square(acorr - exp(-times / length)[:, newaxis])
+    ),
+    args=(to_fit.values, time_in_days),
+    method="bounded",
+    bounds=(0, 365 * 5),
 )
 # Returns just over the lower bound if I make the lower bound more
 # than one.
@@ -633,16 +980,18 @@ print("Parameters for exp(-dt/T):")
 print(single_time_opt.x)
 
 two_time_opt = scipy.optimize.minimize(
-    fun=lambda params, acorr, times: nansum(square(
-            acorr - 
-            (
-                params[0] * exp(-times / (params[1] * DAYS_PER_WEEK)) +
-                (1 - params[0]) * exp(-times / (params[2] / HOURS_PER_DAY))
+    fun=lambda params, acorr, times: nansum(
+        square(
+            acorr
+            - (
+                params[0] * exp(-times / (params[1] * DAYS_PER_WEEK))
+                + (1 - params[0]) * exp(-times / (params[2] / HOURS_PER_DAY))
             )[:, np.newaxis]
-    )),
-    x0=(.8, 3., 3.),
+        )
+    ),
+    x0=(0.8, 3.0, 3.0),
     args=(to_fit.values, time_in_days),
-    method="L-BFGS-B"
+    method="L-BFGS-B",
 )
 # Around a twenty-day correlation period, with most weight on EC error
 print("Parameters for a exp(-dt/T) + (1 - a) exp(-dt/Tec): [a, T, Tec]")
@@ -651,66 +1000,96 @@ print("Units: unitless, weeks, hours")
 # print("EC time in hours:", two_time_opt.x[2] * HOURS_PER_DAY)
 
 cos_opt = scipy.optimize.minimize(
-    fun=lambda params, acorr, times: nansum(square(
+    fun=lambda params, acorr, times: nansum(
+        square(
             # [a, b0, b1, b2, c, d, Td, Ta, To, Tec]
-            acorr - 
-            (
-                params[0] * cos(TWO_PI_OVER_DAY * times) * exp(-times / (params[6] * DAYS_PER_WEEK)) +
-                (
-                    params[1] / 10 +
-                    params[2] / 10 * cos(TWO_PI_OVER_YEAR * times) +
-                    params[3] / 10 * cos(2 * TWO_PI_OVER_YEAR * times)
-                ) * exp(-times / (params[7] * DAYS_PER_YEAR)) +
-                params[4] * exp(-times / (params[8] * DAYS_PER_WEEK)) +
-                params[5] * exp(-times / (params[9] / HOURS_PER_DAY))
-            )#[:, np.newaxis]
-    )),
-    x0=(.2, .2, .2, .2, .2, .2, 2, 3, 5, 3.),
+            acorr
+            - (
+                params[0]
+                * cos(TWO_PI_OVER_DAY * times)
+                * exp(-times / (params[6] * DAYS_PER_WEEK))
+                + (
+                    params[1] / 10
+                    + params[2] / 10 * cos(TWO_PI_OVER_YEAR * times)
+                    + params[3] / 10 * cos(2 * TWO_PI_OVER_YEAR * times)
+                )
+                * exp(-times / (params[7] * DAYS_PER_YEAR))
+                + params[4] * exp(-times / (params[8] * DAYS_PER_WEEK))
+                + params[5] * exp(-times / (params[9] / HOURS_PER_DAY))
+            )  # [:, np.newaxis]
+        )
+    ),
+    x0=(0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 2, 3, 5, 3.0),
     args=(to_fit.mean(axis=1).values, time_in_days),
     method="L-BFGS-B",
     # options=dict(maxiter=100, disp=True),
 )
 
-print("Parameters for cosine:",
-      "\nDaily coefficient and timescale (weeks):", cos_opt.x[[0, 6]],
-      "\nAnnual coefficients * 10 and timescale (years):", cos_opt.x[[1, 2, 3, 7]],
-      # "\nAnnual timescale in years:", cos_opt.x[7] / DAYS_PER_YEAR,
-      "\nResidual coefficient and timescale (weeks):", cos_opt.x[[4, 8]],
-      "\nEddy Covariance coefficient and timescale (hours):", cos_opt.x[[5, 9]],
-      # "\nEC timescale in hours:", cos_opt.x[9] * HOURS_PER_DAY,
-      "\nConverged:", cos_opt.success, cos_opt.message)
-
-exp_sin2_opt = scipy.optimize.minimize(
-    fun=lambda params, acorr, times: nansum(square(
-            # [a, b, c, d, ld, la, Td, Ta, To, Tec]
-            acorr - 
-            (
-                params[0] * exp(-(sin(TWO_PI_OVER_DAY * times) / params[4]) ** 2) *
-                  exp(-times / (params[6] * DAYS_PER_WEEK)) +
-                params[1] * exp(-(sin(TWO_PI_OVER_YEAR * times) / params[5]) ** 2) *
-                  exp(-times / (params[7] * DAYS_PER_YEAR)) +
-                params[2] * exp(-times / (params[8] * DAYS_PER_WEEK)) +
-                params[3] * exp(-times / (params[9] / HOURS_PER_DAY))
-            )[:, np.newaxis]
-    )),
-    x0=(.2, .2, .2, .2, 10, 10, 2, 3, 5, 3.),
-    args=(to_fit.values, time_in_days),
-    method="L-BFGS-B"
+print(
+    "Parameters for cosine:",
+    "\nDaily coefficient and timescale (weeks):",
+    cos_opt.x[[0, 6]],
+    "\nAnnual coefficients * 10 and timescale (years):",
+    cos_opt.x[[1, 2, 3, 7]],
+    # "\nAnnual timescale in years:", cos_opt.x[7] / DAYS_PER_YEAR,
+    "\nResidual coefficient and timescale (weeks):",
+    cos_opt.x[[4, 8]],
+    "\nEddy Covariance coefficient and timescale (hours):",
+    cos_opt.x[[5, 9]],
+    # "\nEC timescale in hours:", cos_opt.x[9] * HOURS_PER_DAY,
+    "\nConverged:",
+    cos_opt.success,
+    cos_opt.message,
 )
 
-print("Parameters for exponential sin-squared:",
-      "\nDaily coefficient, dieoff, and timescale:", exp_sin2_opt.x[[0, 4, 6]],
-      "\nAnnual coefficient, dieoff, and timescale:", exp_sin2_opt.x[[1, 5, 7]],
-      "\nAnnual timescale in years:", exp_sin2_opt.x[7] / DAYS_PER_YEAR,
-      "\nResidual coefficient and timescale:", exp_sin2_opt.x[[2, 8]],
-      "\nEddy Covariance coefficient and timescale:", exp_sin2_opt.x[[3, 9]],
-      "\nEC timescale in hours:", exp_sin2_opt.x[9] * HOURS_PER_DAY,
-      "\nConverged:", exp_sin2_opt.success, exp_sin2_opt.message)
+exp_sin2_opt = scipy.optimize.minimize(
+    fun=lambda params, acorr, times: nansum(
+        square(
+            # [a, b, c, d, ld, la, Td, Ta, To, Tec]
+            acorr
+            - (
+                params[0]
+                * exp(-((sin(TWO_PI_OVER_DAY * times) / params[4]) ** 2))
+                * exp(-times / (params[6] * DAYS_PER_WEEK))
+                + params[1]
+                * exp(-((sin(TWO_PI_OVER_YEAR * times) / params[5]) ** 2))
+                * exp(-times / (params[7] * DAYS_PER_YEAR))
+                + params[2] * exp(-times / (params[8] * DAYS_PER_WEEK))
+                + params[3] * exp(-times / (params[9] / HOURS_PER_DAY))
+            )[:, np.newaxis]
+        )
+    ),
+    x0=(0.2, 0.2, 0.2, 0.2, 10, 10, 2, 3, 5, 3.0),
+    args=(to_fit.values, time_in_days),
+    method="L-BFGS-B",
+)
+
+print(
+    "Parameters for exponential sin-squared:",
+    "\nDaily coefficient, dieoff, and timescale:",
+    exp_sin2_opt.x[[0, 4, 6]],
+    "\nAnnual coefficient, dieoff, and timescale:",
+    exp_sin2_opt.x[[1, 5, 7]],
+    "\nAnnual timescale in years:",
+    exp_sin2_opt.x[7] / DAYS_PER_YEAR,
+    "\nResidual coefficient and timescale:",
+    exp_sin2_opt.x[[2, 8]],
+    "\nEddy Covariance coefficient and timescale:",
+    exp_sin2_opt.x[[3, 9]],
+    "\nEC timescale in hours:",
+    exp_sin2_opt.x[9] * HOURS_PER_DAY,
+    "\nConverged:",
+    exp_sin2_opt.success,
+    exp_sin2_opt.message,
+)
 
 acf_data.plot(
-    subplots=True, sharex=True, sharey=True,
-    xlim=(0, 1e9 * 3600 * 24 * 365.2425 * 5), ylim=(-.5, 1),
-    xticks=pd.timedelta_range(start=0, freq="365D", periods=6).to_numpy().astype(float)
+    subplots=True,
+    sharex=True,
+    sharey=True,
+    xlim=(0, 1e9 * 3600 * 24 * 365.2425 * 5),
+    ylim=(-0.5, 1),
+    xticks=pd.timedelta_range(start=0, freq="365D", periods=6).to_numpy().astype(float),
 )
 plt.savefig("ameriflux_minus_casa_hour_tower_data_long.pdf")
 
@@ -755,7 +1134,19 @@ def exp_cos_daily(tdata, daily_coef, Td, resid_coef, To, ec_coef, Tec):
 # days and errors in the seasonal cycle are correlated over years
 
 
-def exp_cos_daily_annual(tdata, daily_coef, Td, ann_coef0, ann_coef1, ann_coef2, Ta, resid_coef, To, ec_coef, Tec):
+def exp_cos_daily_annual(
+    tdata,
+    daily_coef,
+    Td,
+    ann_coef0,
+    ann_coef1,
+    ann_coef2,
+    Ta,
+    resid_coef,
+    To,
+    ec_coef,
+    Tec,
+):
     """Errors in daily cycle are correlated day-night, Correlated errors in seasonal cycle
 
     d_c dm_0 a_c
@@ -767,14 +1158,19 @@ def exp_cos_daily_annual(tdata, daily_coef, Td, ann_coef0, ann_coef1, ann_coef2,
     exp = np.exp
     cos = np.cos
     result = daily_coef * cos(TWO_PI_OVER_DAY * tdata) * exp(-tdata / Td)
-    result += (ann_coef0 + ann_coef1 * cos(TWO_PI_OVER_YEAR * tdata) +
-               ann_coef2 * cos(FOUR_PI_OVER_YEAR * tdata)) * exp(-tdata / Ta)
+    result += (
+        ann_coef0
+        + ann_coef1 * cos(TWO_PI_OVER_YEAR * tdata)
+        + ann_coef2 * cos(FOUR_PI_OVER_YEAR * tdata)
+    ) * exp(-tdata / Ta)
     result += resid_coef * exp(-tdata / To)
     result += ec_coef * exp(-tdata / Tec)
     return result
 
 
-def exp_cos_daily_expsin2_annual(tdata, daily_coef, Td, ann_coef, ann_width, Ta, resid_coef, To, ec_coef, Tec):
+def exp_cos_daily_expsin2_annual(
+    tdata, daily_coef, Td, ann_coef, ann_width, Ta, resid_coef, To, ec_coef, Tec
+):
     """Errors in daily cycle correlated day-night + Correlated errors in seasonal cycle are only positive
 
     d_c dm_0 a_p
@@ -786,7 +1182,9 @@ def exp_cos_daily_expsin2_annual(tdata, daily_coef, Td, ann_coef, ann_width, Ta,
     cos = np.cos
     exp = np.exp
     result = daily_coef * cos(TWO_PI_OVER_DAY * tdata) * exp(-tdata / Td)
-    result += ann_coef * exp(-(np.sin(PI_OVER_YEAR * tdata) / ann_width) ** 2 - tdata / Ta)
+    result += ann_coef * exp(
+        -((np.sin(PI_OVER_YEAR * tdata) / ann_width) ** 2) - tdata / Ta
+    )
     result += resid_coef * exp(-tdata / To)
     result += ec_coef * exp(-tdata / Tec)
     return result
@@ -796,10 +1194,8 @@ def exp_cos_daily_expsin2_annual(tdata, daily_coef, Td, ann_coef, ann_width, Ta,
 
 
 def exp_cos_daily_times_annual(
-    tdata,
-    dann_coef0, dann_coef1, dann_coef2, Tad,
-    resid_coef, To,
-    ec_coef, Tec):
+    tdata, dann_coef0, dann_coef1, dann_coef2, Tad, resid_coef, To, ec_coef, Tec
+):
     """Errors in daily cycle correlated day-night, recur same time next year
 
     d_c dm_c a_0
@@ -810,9 +1206,13 @@ def exp_cos_daily_times_annual(
     cos = np.cos
     exp = np.exp
     result = (
-        cos(TWO_PI_OVER_DAY * tdata) *
-        (dann_coef0 + dann_coef1 * cos(TWO_PI_OVER_YEAR * tdata) +
-         dann_coef2 * cos(FOUR_PI_OVER_YEAR * tdata)) * exp(-tdata / Tad)
+        cos(TWO_PI_OVER_DAY * tdata)
+        * (
+            dann_coef0
+            + dann_coef1 * cos(TWO_PI_OVER_YEAR * tdata)
+            + dann_coef2 * cos(FOUR_PI_OVER_YEAR * tdata)
+        )
+        * exp(-tdata / Tad)
     )
     result += resid_coef * exp(-tdata / To)
     result += ec_coef * exp(-tdata / Tec)
@@ -820,10 +1220,16 @@ def exp_cos_daily_times_annual(
 
 
 def exp_expsin2_daily_times_cos_annual(
-    tdata, daily_width,
-    dann_coef0, dann_coef1, dann_coef2, Tad,
-    resid_coef, To,
-    ec_coef, Tec
+    tdata,
+    daily_width,
+    dann_coef0,
+    dann_coef1,
+    dann_coef2,
+    Tad,
+    resid_coef,
+    To,
+    ec_coef,
+    Tec,
 ):
     """Errors in daily cycle not correlated day-night, may be anticorrelated at some lags
 
@@ -835,9 +1241,13 @@ def exp_expsin2_daily_times_cos_annual(
     cos = np.cos
     exp = np.exp
     result = (
-        exp(-(np.sin(PI_OVER_DAY * tdata) / daily_width) ** 2) *
-        (dann_coef0 + dann_coef1 * cos(TWO_PI_OVER_YEAR * tdata) +
-         dann_coef2 * cos(FOUR_PI_OVER_YEAR * tdata)) * exp(-tdata / Tad)
+        exp(-((np.sin(PI_OVER_DAY * tdata) / daily_width) ** 2))
+        * (
+            dann_coef0
+            + dann_coef1 * cos(TWO_PI_OVER_YEAR * tdata)
+            + dann_coef2 * cos(FOUR_PI_OVER_YEAR * tdata)
+        )
+        * exp(-tdata / Tad)
     )
     result += resid_coef * exp(-tdata / To)
     result += ec_coef * exp(-tdata / Tec)
@@ -845,10 +1255,8 @@ def exp_expsin2_daily_times_cos_annual(
 
 
 def exp_cos_daily_times_expsin2_annual(
-    tdata,
-    ann_coef, ann_width, Ta,
-    resid_coef, To,
-    ec_coef, Tec):
+    tdata, ann_coef, ann_width, Ta, resid_coef, To, ec_coef, Tec
+):
     """Errors in daily cycle correlated day-night, are always of same sign day-day
 
     d_c dm_p a_0
@@ -858,9 +1266,9 @@ def exp_cos_daily_times_expsin2_annual(
     To *= DAYS_PER_WEEK
     exp = np.exp
     result = (
-        np.cos(TWO_PI_OVER_DAY * tdata) *
-        ann_coef *
-        exp(-(np.sin(PI_OVER_YEAR * tdata) / ann_width) ** 2)
+        np.cos(TWO_PI_OVER_DAY * tdata)
+        * ann_coef
+        * exp(-((np.sin(PI_OVER_YEAR * tdata) / ann_width) ** 2))
     )
     result += resid_coef * exp(-tdata / To)
     result += ec_coef * exp(-tdata / Tec)
@@ -872,9 +1280,18 @@ def exp_cos_daily_times_expsin2_annual(
 
 def exp_cos_daily_times_cos_annual_plus_cos_annual(
     tdata,
-    dann_coef0, dann_coef1, dann_coef2, Tad,
-    ann_coef0, ann_coef1, ann_coef2, Ta,
-    resid_coef, To, ec_coef, Tec
+    dann_coef0,
+    dann_coef1,
+    dann_coef2,
+    Tad,
+    ann_coef0,
+    ann_coef1,
+    ann_coef2,
+    Ta,
+    resid_coef,
+    To,
+    ec_coef,
+    Tec,
 ):
     """Daily cycle errors not correlated day-night, may be anticorrelated, seasonal errors correlated
 
@@ -886,13 +1303,18 @@ def exp_cos_daily_times_cos_annual_plus_cos_annual(
     cos = np.cos
     exp = np.exp
     result = (
-        cos(TWO_PI_OVER_DAY * tdata) *
-        (dann_coef0 + dann_coef1 * cos(TWO_PI_OVER_YEAR * tdata) +
-         dann_coef2 * cos(FOUR_PI_OVER_YEAR * tdata)) * exp(-tdata / Tad)
+        cos(TWO_PI_OVER_DAY * tdata)
+        * (
+            dann_coef0
+            + dann_coef1 * cos(TWO_PI_OVER_YEAR * tdata)
+            + dann_coef2 * cos(FOUR_PI_OVER_YEAR * tdata)
+        )
+        * exp(-tdata / Tad)
     )
     result += (
-        ann_coef0 + ann_coef1 * cos(TWO_PI_OVER_YEAR * tdata) +
-        ann_coef2 * cos(FOUR_PI_OVER_YEAR * tdata)
+        ann_coef0
+        + ann_coef1 * cos(TWO_PI_OVER_YEAR * tdata)
+        + ann_coef2 * cos(FOUR_PI_OVER_YEAR * tdata)
     ) * exp(-tdata / Ta)
     result += resid_coef * exp(-tdata / To)
     result += ec_coef * exp(-tdata / Tec)
@@ -900,10 +1322,20 @@ def exp_cos_daily_times_cos_annual_plus_cos_annual(
 
 
 def exp_expsin2_daily_times_cos_annual_plus_cos_annual(
-    tdata, daily_width,
-    dann_coef0, dann_coef1, dann_coef2, Tad,
-    ann_coef0, ann_coef1, ann_coef2, Ta,
-    resid_coef, To, ec_coef, Tec
+    tdata,
+    daily_width,
+    dann_coef0,
+    dann_coef1,
+    dann_coef2,
+    Tad,
+    ann_coef0,
+    ann_coef1,
+    ann_coef2,
+    Ta,
+    resid_coef,
+    To,
+    ec_coef,
+    Tec,
 ):
     """Daily cycle errors not correlated day-night, may be anticorrelated, seasonal errors correlated
 
@@ -915,25 +1347,37 @@ def exp_expsin2_daily_times_cos_annual_plus_cos_annual(
     cos = np.cos
     exp = np.exp
     result = (
-        exp(-(np.sin(PI_OVER_DAY * tdata) / daily_width) ** 2) *
-        (dann_coef0 + dann_coef1 * cos(TWO_PI_OVER_YEAR * tdata) +
-         dann_coef2 * cos(FOUR_PI_OVER_YEAR * tdata)) * exp(-tdata / Tad)
+        exp(-((np.sin(PI_OVER_DAY * tdata) / daily_width) ** 2))
+        * (
+            dann_coef0
+            + dann_coef1 * cos(TWO_PI_OVER_YEAR * tdata)
+            + dann_coef2 * cos(FOUR_PI_OVER_YEAR * tdata)
+        )
+        * exp(-tdata / Tad)
     )
     result += (
-        ann_coef0 + ann_coef1 * cos(TWO_PI_OVER_YEAR * tdata) +
-        ann_coef2 * cos(FOUR_PI_OVER_YEAR * tdata)
+        ann_coef0
+        + ann_coef1 * cos(TWO_PI_OVER_YEAR * tdata)
+        + ann_coef2 * cos(FOUR_PI_OVER_YEAR * tdata)
     ) * exp(-tdata / Ta)
     result += resid_coef * exp(-tdata / To)
     result += ec_coef * exp(-tdata / Tec)
     return result
 
 
-
 def exp_cos_daily_times_expsin2_annual_plus_cos_annual(
     tdata,
-    dann_coef, dann_width, Tad,
-    ann_coef0, ann_coef1, ann_coef2, Ta,
-    resid_coef, To, ec_coef, Tec
+    dann_coef,
+    dann_width,
+    Tad,
+    ann_coef0,
+    ann_coef1,
+    ann_coef2,
+    Ta,
+    resid_coef,
+    To,
+    ec_coef,
+    Tec,
 ):
     """Daily cycle errors not correlated day-night, may be anticorrelated, seasonal errors correlated"""
     Tec /= HOURS_PER_DAY
@@ -942,12 +1386,14 @@ def exp_cos_daily_times_expsin2_annual_plus_cos_annual(
     cos = np.cos
     exp = np.exp
     result = (
-        dann_coef * cos(TWO_PI_OVER_DAY * tdata) *
-        exp(-np.sin(PI_OVER_YEAR * tdata / dann_width) ** 2 - tdata / Tad)
+        dann_coef
+        * cos(TWO_PI_OVER_DAY * tdata)
+        * exp(-np.sin(PI_OVER_YEAR * tdata / dann_width) ** 2 - tdata / Tad)
     )
     result += (
-        ann_coef0 + ann_coef1 * cos(TWO_PI_OVER_YEAR * tdata) +
-        ann_coef2 * cos(FOUR_PI_OVER_YEAR * tdata)
+        ann_coef0
+        + ann_coef1 * cos(TWO_PI_OVER_YEAR * tdata)
+        + ann_coef2 * cos(FOUR_PI_OVER_YEAR * tdata)
     ) * exp(-tdata / Ta)
     result += resid_coef * exp(-tdata / To)
     result += ec_coef * exp(-tdata / Tec)
@@ -955,10 +1401,19 @@ def exp_cos_daily_times_expsin2_annual_plus_cos_annual(
 
 
 def exp_expsin2_daily_times_expsin2_annual_plus_cos_annual(
-    tdata, daily_width,
-    dann_coef, dann_width, Tad,
-    ann_coef0, ann_coef1, ann_coef2, Ta,
-    resid_coef, To, ec_coef, Tec
+    tdata,
+    daily_width,
+    dann_coef,
+    dann_width,
+    Tad,
+    ann_coef0,
+    ann_coef1,
+    ann_coef2,
+    Ta,
+    resid_coef,
+    To,
+    ec_coef,
+    Tec,
 ):
     """Daily cycle errors not correlated day-night, may be anticorrelated, seasonal errors correlated
 
@@ -970,17 +1425,15 @@ def exp_expsin2_daily_times_expsin2_annual_plus_cos_annual(
     sin = np.sin
     cos = np.cos
     exp = np.exp
-    result = (
-        dann_coef *
-        exp(
-            -sin(PI_OVER_DAY * tdata / daily_width) ** 2
-            -sin(PI_OVER_YEAR * tdata / dann_width) ** 2
-            - tdata / Tad
-        )
+    result = dann_coef * exp(
+        -sin(PI_OVER_DAY * tdata / daily_width) ** 2
+        - sin(PI_OVER_YEAR * tdata / dann_width) ** 2
+        - tdata / Tad
     )
     result += (
-        ann_coef0 + ann_coef1 * cos(TWO_PI_OVER_YEAR * tdata) +
-        ann_coef2 * cos(FOUR_PI_OVER_YEAR * tdata)
+        ann_coef0
+        + ann_coef1 * cos(TWO_PI_OVER_YEAR * tdata)
+        + ann_coef2 * cos(FOUR_PI_OVER_YEAR * tdata)
     ) * exp(-tdata / Ta)
     result += resid_coef * exp(-tdata / To)
     result += ec_coef * exp(-tdata / Tec)
@@ -1002,59 +1455,55 @@ CORR_FUNS = (
 )
 
 STARTING_PARAMS = dict(
-    daily_coef = 0.4,
-    daily_width = .3,
-    Td = 3.,
-    ann_coef0 = -1e-3,
-    ann_coef1 = +1e-2,
-    ann_coef2 = +1e-2,
-    dann_coef = 1e-3,
-    dann_width = .3,
-    dann_coef0 = -1e-3,
-    dann_coef1 = +1e-2,
-    dann_coef2 = +1e-2,
-    ann_coef = 0.04,
-    ann_width = .3,
-    Ta = 3.,
-    Tad = 3.,
-    resid_coef = 0.2,
-    To = 3.,
-    ec_coef = 0.4,
-    Tec = 3.,
+    daily_coef=0.4,
+    daily_width=0.3,
+    Td=3.0,
+    ann_coef0=-1e-3,
+    ann_coef1=+1e-2,
+    ann_coef2=+1e-2,
+    dann_coef=1e-3,
+    dann_width=0.3,
+    dann_coef0=-1e-3,
+    dann_coef1=+1e-2,
+    dann_coef2=+1e-2,
+    ann_coef=0.04,
+    ann_width=0.3,
+    Ta=3.0,
+    Tad=3.0,
+    resid_coef=0.2,
+    To=3.0,
+    ec_coef=0.4,
+    Tec=3.0,
 )
 
 COEF_DATA = pd.DataFrame(
     columns=STARTING_PARAMS.keys(),
     index=pd.MultiIndex.from_product(
-        [acf_data,
-         [fun.__name__ for fun in CORR_FUNS]],
-        names=["Site", "Correlation function"]
-    )
+        [acf_data, [fun.__name__ for fun in CORR_FUNS]],
+        names=["Site", "Correlation function"],
+    ),
 )
 COEF_VAR_DATA = pd.DataFrame(
     columns=STARTING_PARAMS.keys(),
     index=pd.MultiIndex.from_product(
-        [acf_data,
-         [fun.__name__ for fun in CORR_FUNS]],
-        names=["Site", "Correlation function"]
-    )
+        [acf_data, [fun.__name__ for fun in CORR_FUNS]],
+        names=["Site", "Correlation function"],
+    ),
 )
 FIT_ERROR = pd.DataFrame(
     columns=["weighted_error", "MSE", "MAE", "MAR-r"],
     index=pd.MultiIndex.from_product(
-        [acf_data,
-         [fun.__name__ for fun in CORR_FUNS]],
-        names=["Site", "Correlation function"]
-    )
+        [acf_data, [fun.__name__ for fun in CORR_FUNS]],
+        names=["Site", "Correlation function"],
+    ),
 )
 INF_CRIT = (aic, aicc, bic, hqic)
 IC_DATA = pd.DataFrame(
     columns=[ic.__name__ for ic in INF_CRIT],
     index=pd.MultiIndex.from_product(
-        [acf_data,
-         [fun.__name__ for fun in CORR_FUNS]],
-        names=["Site", "Correlation function"]
-    )
+        [acf_data, [fun.__name__ for fun in CORR_FUNS]],
+        names=["Site", "Correlation function"],
+    ),
 )
 SAMPLE_SIZE = 2000
 MVN_LOGPDF = scipy.stats.multivariate_normal.logpdf
@@ -1068,9 +1517,11 @@ for column in acf_data.iloc[:, :]:
     acf_col = acf_col[acf_pair_counts > 0].resample("1H").mean()
     acf_pair_counts = pair_counts.loc[acf_col.index, column]
     amf_col = amf_ds["ameriflux_carbon_dioxide_flux_estimate"].sel(site=column)
-    casa_col = casa_ds["NEE"].set_index(
-        ameriflux_tower_location="Site_Id"
-    ).sel(ameriflux_tower_location=column)
+    casa_col = (
+        casa_ds["NEE"]
+        .set_index(ameriflux_tower_location="SiteFID")
+        .sel(ameriflux_tower_location=column)
+    )
     # .dropna("time").resample(time="1H").mean()
     fig, axes = plt.subplots(5, 1, figsize=(6.5, 8))
     for ax in axes[:-1]:
@@ -1081,15 +1532,20 @@ for column in acf_data.iloc[:, :]:
     axes[0].set_ylabel("Flux\n\N{MICRO SIGN}mol/m\N{SUPERSCRIPT TWO}/s")
     axes[0].set_xlabel("Date")
     resampled_casa = casa_col.resample(time="1W").mean()
-    casa_line = axes[1].plot(resampled_casa.coords["time"].values,
-                             resampled_casa.values, label="CASA")
+    casa_line = axes[1].plot(
+        resampled_casa.coords["time"].values, resampled_casa.values, label="CASA"
+    )
     resampled_amf = amf_col.resample(TIMESTAMP_START="1W").mean()
-    amf_line = axes[1].plot(resampled_amf.coords["TIMESTAMP_START"].values,
-                            resampled_amf.values, label="AmeriFlux")
+    amf_line = axes[1].plot(
+        resampled_amf.coords["TIMESTAMP_START"].values,
+        resampled_amf.values,
+        label="AmeriFlux",
+    )
     axes[1].set_title("Weekly-average fluxes")
     axes[1].set_ylabel("Flux\n\N{MICRO SIGN}mol/m\N{SUPERSCRIPT TWO}/s")
-    fig.legend(handles=[casa_line[0], amf_line[0]],
-               labels=["CASA", "AmeriFlux"], ncol=2)
+    fig.legend(
+        handles=[casa_line[0], amf_line[0]], labels=["CASA", "AmeriFlux"], ncol=2
+    )
     axes[1].set_xlabel("Date")
     data_col.plot(ax=axes[2])
     axes[2].set_title("Ameriflux minus CASA Residuals")
@@ -1109,17 +1565,21 @@ for column in acf_data.iloc[:, :]:
     for ax in axes[:3]:
         ax.set_xlim(data_col.index[0], data_col.index[-1])
         ax.set_xticks(dates)
-        ax.set_xticklabels(dates.strftime("%Y-%m"), rotation=10,
-                           verticalalignment="top", horizontalalignment="right")
+        ax.set_xticklabels(
+            dates.strftime("%Y-%m"),
+            rotation=10,
+            verticalalignment="top",
+            horizontalalignment="right",
+        )
         ax.set_xticks(minor_dates, minor=True)
     xticklocs = pd.timedelta_range(start=0, freq="365D", periods=7)
     minor_dts = pd.timedelta_range(start=0, freq="91D", periods=28)
     for ax in axes[3:]:
-        ax.set_xlim(acf_col.index[0].to_numpy().astype("i8").astype(float),
-                    acf_col.index[-1].to_numpy().astype("i8").astype(float))
-        ax.set_xticks(
-            xticklocs.to_numpy().astype("i8").astype(float)
+        ax.set_xlim(
+            acf_col.index[0].to_numpy().astype("i8").astype(float),
+            acf_col.index[-1].to_numpy().astype("i8").astype(float),
         )
+        ax.set_xticks(xticklocs.to_numpy().astype("i8").astype(float))
         ax.set_xticklabels(xticklocs.days)
         ax.set_xlabel("Lag (days)")
     fig.suptitle(
@@ -1130,7 +1590,7 @@ for column in acf_data.iloc[:, :]:
         )
     )
     fig.tight_layout()
-    fig.subplots_adjust(hspace=1, top=.93)
+    fig.subplots_adjust(hspace=1, top=0.93)
     fig.savefig(
         "{site:s}-ameriflux-minus-casa-resid-acf-counts.pdf".format(site=column)
     )
@@ -1140,8 +1600,9 @@ for column in acf_data.iloc[:, :]:
     acf_times = acf_col.index.values.astype("m8[h]").astype("u8")
     acf_times -= acf_times[0]
     acf_times = acf_times.astype("f4") / 24
-    fig, axes = plt.subplots(len(CORR_FUNS) + 1, 1, figsize=(7, 5),
-                             sharex=True, sharey=True)
+    fig, axes = plt.subplots(
+        len(CORR_FUNS) + 1, 1, figsize=(7, 5), sharex=True, sharey=True
+    )
     axes[0].plot(acf_times, acf_col)
     axes[0].set_title("Empirical Correlogram")
     fig.suptitle(
@@ -1158,13 +1619,15 @@ for column in acf_data.iloc[:, :]:
     # sample_times -= sample_times[0]
     # sample_times = sample_times.astype("f4") / 24
     # dt_sample = np.abs(sample_times[:, np.newaxis] - sample_times[np.newaxis, :])
-    uncertainty = 1. / np.sqrt(acf_pair_counts + 1e-30).astype(np.float32)
+    uncertainty = 1.0 / np.sqrt(acf_pair_counts + 1e-30).astype(np.float32)
     for corr_fun, ax in zip(CORR_FUNS, axes[1:]):
         argspec = inspect.getfullargspec(corr_fun)
         param_names = inspect.getfullargspec(corr_fun).args[1:]
         try:
             param_vals, param_cov = scipy.optimize.curve_fit(
-                corr_fun, acf_times, acf_col,
+                corr_fun,
+                acf_times,
+                acf_col,
                 [STARTING_PARAMS[param] for param in param_names],
                 sigma=uncertainty,
             )
@@ -1201,15 +1664,27 @@ for column in acf_data.iloc[:, :]:
         # ax.set_title("Fit of {corr_fun:s}".format(corr_fun=corr_fun.__name__))
         ax.set_title(corr_fun.__doc__)
     fig.tight_layout()
-    fig.subplots_adjust(top=.9, hspace=1.1)
+    fig.subplots_adjust(top=0.9, hspace=1.1)
     ax.set_xlim(0, 365.2425 * 3)
     ax.set_ylim(-1, 1)
     for ax in axes:
-        ax.set_xticks(pd.timedelta_range(start=0, freq="365D", periods=6).to_numpy().astype("m8[D]").astype("u8").astype(float))
+        ax.set_xticks(
+            pd.timedelta_range(start=0, freq="365D", periods=6)
+            .to_numpy()
+            .astype("m8[D]")
+            .astype("u8")
+            .astype(float)
+        )
     fig.savefig("{site:s}-ameriflux-minus-casa-corr-fits-long.pdf".format(site=column))
     ax.set_xlim(0, 56)
     for ax in axes:
-        ax.set_xticks(pd.timedelta_range(start=0, freq="7D", periods=9).to_numpy().astype("m8[D]").astype("u8").astype(float))
+        ax.set_xticks(
+            pd.timedelta_range(start=0, freq="7D", periods=9)
+            .to_numpy()
+            .astype("m8[D]")
+            .astype("u8")
+            .astype(float)
+        )
     fig.savefig("{site:s}-ameriflux-minus-casa-corr-fits-short.pdf".format(site=column))
     plt.close(fig)
 
@@ -1219,9 +1694,9 @@ FIT_ERROR.to_csv("ameriflux-minus-casa-hour-towers-correlation-function-fits.csv
 
 
 for column in difference_df_rect:
-    fig, axes = plt.subplots(4, 1, figsize=(6.5, 4),
-                             sharex=True, sharey=True)
-    fig.suptitle("{site:s} - {climate:s} - {veg:s}".format(
+    fig, axes = plt.subplots(4, 1, figsize=(6.5, 4), sharex=True, sharey=True)
+    fig.suptitle(
+        "{site:s} - {climate:s} - {veg:s}".format(
             site=column,
             climate=amf_ds.coords["CLIMATE_KOEPPEN"].sel(site=column).values,
             veg=amf_ds.coords["IGBP"].sel(site=column).values,
@@ -1230,37 +1705,60 @@ for column in difference_df_rect:
     acf_col = acf_data[column].dropna()
     acf_times = acf_col.index.values.astype("m8[h]").astype(float) / HOURS_PER_DAY
     acf_col.plot(ax=axes[0])
-    axes[0].set_xticks(pd.timedelta_range(start=0, freq="365D", periods=6)
-                  .to_numpy().astype("i8").astype(float))
-    axes[0].set_xticks(pd.timedelta_range(start=0, freq="91D", periods=24)
-                  .to_numpy().astype("i8").astype(float), minor=True)
-    axes[0].set_xticklabels(["{num:d} years".format(num=num)
-                        for num in range(6)])
+    axes[0].set_xticks(
+        pd.timedelta_range(start=0, freq="365D", periods=6)
+        .to_numpy()
+        .astype("i8")
+        .astype(float)
+    )
+    axes[0].set_xticks(
+        pd.timedelta_range(start=0, freq="91D", periods=24)
+        .to_numpy()
+        .astype("i8")
+        .astype(float),
+        minor=True,
+    )
+    axes[0].set_xticklabels(["{num:d} years".format(num=num) for num in range(6)])
     ax.set_ylim(-1, 1)
     for ax, fit_name in zip(
-        axes[1:], 
-        FIT_ERROR.loc[(column, slice(None)), :].sort_values("weighted_error").index.get_level_values(1)
+        axes[1:],
+        FIT_ERROR.loc[(column, slice(None)), :]
+        .sort_values("weighted_error")
+        .index.get_level_values(1),
     ):
         ax.plot(
             acf_col.index,
-            eval(fit_name)(acf_times, **COEF_DATA.loc[(column, fit_name), :].dropna())
+            eval(fit_name)(acf_times, **COEF_DATA.loc[(column, fit_name), :].dropna()),
         )
         ax.set_title(fit_name)
-        ax.set_xticks(pd.timedelta_range(start=0, freq="365D", periods=6)
-                      .to_numpy().astype("i8").astype(float))
-        ax.set_xticks(pd.timedelta_range(start=0, freq="91D", periods=24)
-                      .to_numpy().astype("i8").astype(float), minor=True)
-        ax.set_xticklabels(["{num:d} years".format(num=num)
-                            for num in range(6)])
+        ax.set_xticks(
+            pd.timedelta_range(start=0, freq="365D", periods=6)
+            .to_numpy()
+            .astype("i8")
+            .astype(float)
+        )
+        ax.set_xticks(
+            pd.timedelta_range(start=0, freq="91D", periods=24)
+            .to_numpy()
+            .astype("i8")
+            .astype(float),
+            minor=True,
+        )
+        ax.set_xticklabels(["{num:d} years".format(num=num) for num in range(6)])
         ax.set_ylim(-1, 1)
     fig.tight_layout()
-    fig.subplots_adjust(top=.9)
+    fig.subplots_adjust(top=0.9)
     fig.savefig("{column:s}-top-fits.pdf".format(column=column))
     plt.close(fig)
 
 ################################################################################
 
-BEST_FITS = FIT_ERROR.sort_values(["Site", "weighted_error"]).groupby("Site").head(1).reset_index(level=1)
+BEST_FITS = (
+    FIT_ERROR.sort_values(["Site", "weighted_error"])
+    .groupby("Site")
+    .head(1)
+    .reset_index(level=1)
+)
 BEST_FITS["Correlation function"] = pd.Categorical(BEST_FITS["Correlation function"])
 BEST_FITS.groupby("Correlation function").count()["weighted_error"].to_csv(
     "ameriflux-minus-casa-hour-towers-correlation-function-best-fit-counts.csv"
@@ -1268,43 +1766,74 @@ BEST_FITS.groupby("Correlation function").count()["weighted_error"].to_csv(
 
 TOWER_NAMES = BEST_FITS.index
 TOWER_CORR_FUNS = BEST_FITS["Correlation function"]
-AMF_VARS_TO_USE = ["IGBP", "LOCATION_LAT", "LOCATION_LONG", "STATE",
-                   "UTC_OFFSET", "CLIMATE_KOEPPEN", "FLUX_MEASUREMENTS_METHOD",
-                   "LOCATION_ELEV", "TERRAIN", "ASPECT"]
-CASA_VARS_TO_USE = ["Vegetation", "Mean_Temp", "Mean_Preci", "Elevation",
-                    "Longitude", "Years_of_D", "Latitude", "Climate_Cl"]
+AMF_VARS_TO_USE = [
+    "IGBP",
+    "LOCATION_LAT",
+    "LOCATION_LONG",
+    "STATE",
+    "UTC_OFFSET",
+    "CLIMATE_KOEPPEN",
+    "FLUX_MEASUREMENTS_METHOD",
+    "LOCATION_ELEV",
+    "TERRAIN",
+    "ASPECT",
+]
+CASA_VARS_TO_USE = [
+    name
+    for name in [
+        "Vegetation",
+        "Mean_Temp",
+        "Mean_Preci",
+        "Elevation",
+        "Longitude",
+        "Years_of_D",
+        "Latitude",
+        "Climate_Cl",
+    ]
+    if name in casa_ds
+]
 
-amf_var_data = amf_ds[AMF_VARS_TO_USE].sel(site=TOWER_NAMES).to_dataframe()[AMF_VARS_TO_USE]
+amf_var_data = (
+    amf_ds[AMF_VARS_TO_USE].sel(site=TOWER_NAMES).to_dataframe()[AMF_VARS_TO_USE]
+)
 amf_var_data["LOCATION_ELEV"] = amf_var_data["LOCATION_ELEV"].astype(np.float32)
 for column in amf_var_data:
     if amf_var_data[column].dtype == object:
         amf_var_data[column] = pd.Categorical(amf_var_data[column])
 
-casa_var_data = casa_ds[CASA_VARS_TO_USE].set_index(
-    ameriflux_tower_location="Site_Id"
-).sel(ameriflux_tower_location=TOWER_NAMES).to_dataframe()[CASA_VARS_TO_USE]
+casa_var_data = (
+    casa_ds[CASA_VARS_TO_USE]
+    .sel(ameriflux_tower_location=TOWER_NAMES)
+    .to_dataframe()
+    .loc[:, CASA_VARS_TO_USE]
+)
 for column in ["Vegetation", "Climate_Cl"]:
-    casa_var_data[column] = pd.Categorical(casa_var_data[column])
+    if column in casa_var_data:
+        casa_var_data[column] = pd.Categorical(casa_var_data[column])
 
-best_fits_with_explanatory_data = pd.concat((BEST_FITS, amf_var_data, casa_var_data), axis=1)
+best_fits_with_explanatory_data = pd.concat(
+    (BEST_FITS, amf_var_data, casa_var_data), axis=1
+)
 best_fits_with_explanatory_data.to_csv(
     "ameriflux-minus-casa-half-hour-towers-correlation-functions-best-fits-explanatory-vars.csv"
 )
 
 import patsy
+
 design_matrix = patsy.dmatrix(
     "0 + IGBP + LOCATION_LAT + LOCATION_LONG + CLIMATE_KOEPPEN + FLUX_MEASUREMENTS_METHOD"
     " + LOCATION_ELEV + Mean_Temp + Mean_Preci + Vegetation + Climate_Cl",
-    best_fits_with_explanatory_data
+    best_fits_with_explanatory_data,
 )
 sparse_explanatory_data = pd.DataFrame(
     design_matrix,
     columns=design_matrix.design_info.column_names,
     index=best_fits_with_explanatory_data.index,
-    dtype=pd.SparseDtype(np.float32, 0.0)
+    dtype=pd.SparseDtype(np.float32, 0.0),
 )
 
 import sklearn.tree
+
 tree_model = sklearn.tree.DecisionTreeClassifier(max_depth=3)
 classifier = tree_model.fit(sparse_explanatory_data, TOWER_CORR_FUNS)
 
