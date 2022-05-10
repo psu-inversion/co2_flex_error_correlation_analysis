@@ -46,7 +46,7 @@ REQUIRED_DATA_FRAC = 0.8
 UREG = pint.UnitRegistry()
 
 AMERIFLUX_MINUS_CASA_DATA = xarray.open_dataset(
-    "ameriflux-and-casa-matching-data-2.nc4",
+    "ameriflux-and-casa-matching-data.nc4",
     chunks={"site": 30},
 )
 
