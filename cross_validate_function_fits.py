@@ -166,7 +166,7 @@ for coef, val in PARAM_UPPER_BOUNDS.items():
 ############################################################
 # Read in data
 AMERIFLUX_MINUS_CASA_DATA = xarray.open_dataset(
-    "ameriflux-and-casa-matching-data-2.nc4"
+    "ameriflux-and-casa-matching-data.nc4"
 )
 
 ############################################################

@@ -15,29 +15,31 @@ import flux_correlation_functions
 import flux_correlation_functions_py
 
 print("Reading correlation data", flush=True)
-corr_data1 = pd.read_csv(
-    "ameriflux-minus-casa-half-hour-towers-autocorrelation-functions.csv",
-    index_col=0
-)
+# corr_data1 = pd.read_csv(
+#     "ameriflux-minus-casa-half-hour-towers-autocorrelation-functions.csv",
+#     index_col=0
+# )
 corr_data2 = pd.read_csv(
     "ameriflux-minus-casa-hour-towers-autocorrelation-functions.csv",
     index_col=0
 )
-corr_data = pd.concat([corr_data1, corr_data2], axis=1)
+# corr_data = pd.concat([corr_data1, corr_data2], axis=1)
+corr_data = corr_data2
 corr_data.index = pd.TimedeltaIndex(corr_data.index)
 corr_data.index.name = "Time separation"
 corr_data = corr_data.astype(np.float32)
 print("Have correlation data", flush=True)
 
-pair_counts1 = pd.read_csv(
-    "ameriflux-minus-casa-half-hour-towers-pair-counts.csv",
-    index_col=0
-)
+# pair_counts1 = pd.read_csv(
+#     "ameriflux-minus-casa-half-hour-towers-pair-counts.csv",
+#     index_col=0
+# )
 pair_counts2 = pd.read_csv(
     "ameriflux-minus-casa-hour-towers-pair-counts.csv",
     index_col=0
 )
-pair_counts = pd.concat([pair_counts1, pair_counts2], axis=1)
+# pair_counts = pd.concat([pair_counts1, pair_counts2], axis=1)
+pair_counts = pair_counts2
 pair_counts.index = pd.TimedeltaIndex(pair_counts.index)
 print("Have pair counts", flush=True)
 
@@ -112,7 +114,7 @@ PARAM_UPPER_BOUNDS = dict(
     resid_coef = 10,
     To = 500.,  # fortnights
     ec_coef = 10,
-    Tec = 1000.,  # hours
+    Tec = 12.,  # hours
 )
 
 for coef, val in STARTING_PARAMS.items():

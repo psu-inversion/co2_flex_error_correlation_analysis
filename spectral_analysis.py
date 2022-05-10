@@ -12,28 +12,30 @@ from statsmodels.multivariate.pca import PCA
 mpl.rcParams["figure.dpi"] = 144
 mpl.rcParams["savefig.dpi"] = 300
 
-corr_data1 = pd.read_csv(
-    "ameriflux-minus-casa-half-hour-towers-autocorrelation-functions.csv",
-    index_col=0
-)
+# corr_data1 = pd.read_csv(
+#     "ameriflux-minus-casa-half-hour-towers-autocorrelation-functions.csv",
+#     index_col=0
+# )
 corr_data2 = pd.read_csv(
     "ameriflux-minus-casa-hour-towers-autocorrelation-functions.csv",
     index_col=0
 )
-corr_data = pd.concat([corr_data1, corr_data2], axis=1)
+# corr_data = pd.concat([corr_data1, corr_data2], axis=1)
+corr_data = corr_data2
 corr_data.index = pd.TimedeltaIndex(corr_data.index)
 corr_data.index.name = "Time separation"
 corr_data = corr_data.astype(np.float32)
 
-pair_counts1 = pd.read_csv(
-    "ameriflux-minus-casa-half-hour-towers-pair-counts.csv",
-    index_col=0
-)
+# pair_counts1 = pd.read_csv(
+#     "ameriflux-minus-casa-half-hour-towers-pair-counts.csv",
+#     index_col=0
+# )
 pair_counts2 = pd.read_csv(
     "ameriflux-minus-casa-hour-towers-pair-counts.csv",
     index_col=0
 )
-pair_counts = pd.concat([pair_counts1, pair_counts2], axis=1)
+# pair_counts = pd.concat([pair_counts1, pair_counts2], axis=1)
+pair_counts = pair_counts2
 pair_counts.index = pd.TimedeltaIndex(pair_counts.index)
 
 HOURS_PER_DAY = 24
@@ -67,7 +69,7 @@ for ax in fig.axes:
         minor=False
     )
     ax.set_xticklabels(
-        ["{0:d} years".format(year) for year in range(N_YEARS_DATA + 2)],
+        ["{0:d} years".format(year) for year in range(N_YEARS_DATA + 1)],
         rotation=0, minor=False
     )
 
@@ -116,6 +118,7 @@ pca_results = PCA(
     demean=False,
     # Data is already standardized
     standardize=False,
+    missing="drop-min",
     ncomp=10
 )
 # Boxplots of R^2 for tower ~ comp0, tower ~ comp0 + comp1, ...
@@ -138,6 +141,7 @@ spectral_pca_results = PCA(
     demean=False,
     # Data is already standardized
     standardize=False,
+    missing="drop-min",
     ncomp=10
 )
 # Boxplots of R^2 for tower ~ comp0, tower ~ comp0 + comp1, ...
