@@ -10,13 +10,8 @@ from enum import Enum
 from math import pi
 import collections
 import itertools
-import operator
-import pprint
 
 import numpy as np
-import matplotlib.pyplot as plt
-import numexpr as ne
-import pandas as pd
 
 HOURS_PER_DAY=24
 DAYS_PER_DAY=1
@@ -90,6 +85,7 @@ class CorrelationPart(Enum):
 
 
 assert list(CorrelationPart) == [CorrelationPart.DAILY, CorrelationPart.DM, CorrelationPart.ANN]
+
 
 class PartForm(Enum):
     """Describe one part of a correlation function."""
@@ -283,6 +279,7 @@ def is_valid_combination(part_daily, part_day_mod, part_annual):
         return False
     return True
 
+
 def get_full_expression(part_daily, part_day_mod, part_annual):
     """Get the full expression with the given parts.
 
@@ -373,6 +370,9 @@ def get_weighted_fit_expression(part_daily, part_day_mod, part_annual):
 
 
 if __name__ == "__main__":
+    import numexpr as ne
+    import pandas as pd
+
     print("Reading coefficient data", flush=True)
     coef_data = pd.read_csv(
         "ameriflux-minus-casa-all-towers-parameters.csv",
@@ -486,7 +486,7 @@ if __name__ == "__main__":
             "\tCount in top {0:d}:".format(TOPK),
             count
         )
-            
+
 
 ### TOPK = 1
 # Number of towers: 69

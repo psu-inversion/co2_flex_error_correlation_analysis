@@ -1,0 +1,6 @@
+[build-system]
+requires = ["setuptools", "wheel", "cython", "numpy"]
+
+[tool.isort]
+known_first_party="correlation_function_fits,correlation_utils,flux_correlation_function_fits"
+profile = "black"
