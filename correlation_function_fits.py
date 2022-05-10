@@ -91,6 +91,7 @@ class PartForm(Enum):
     """Describe one part of a correlation function."""
 
     O = "None"
+    D = "Decoupled"
     C = "3-term cosine series"
     P = "Exponential sine-squared"
 
@@ -99,7 +100,6 @@ class PartForm(Enum):
     PERIODIC = P
     EXPSIN2 = P
 
-    D = "Decoupled"
     DECOUPLED = D
     G = D
     GEOSTAT = G
