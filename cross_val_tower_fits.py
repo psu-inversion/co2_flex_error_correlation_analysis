@@ -59,7 +59,7 @@ N_TRAINING = 45
 N_HYPER_TRAIN = 30
 N_CROSS_VAL = 0  # or whatever's left
 
-CALCULATING_AUTOCORRELATIONS = True
+CALCULATE_AUTOCORRELATIONS = True
 
 # Configure logging
 logging.basicConfig(
@@ -240,7 +240,7 @@ for coef, val in PARAM_UPPER_BOUNDS.items():
 ############################################################
 # Read in data
 AMERIFLUX_MINUS_CASA_DATA = xarray.open_dataset(
-    "ameriflux-and-casa-matching-data-2.nc4",
+    "ameriflux-and-casa-matching-data.nc4",
     chunks={"site": 30},
 )
 
@@ -324,7 +324,7 @@ if CALCULATE_AUTOCORRELATIONS:
         {
             "site": (
                 ("site",),
-                AMERIFLUX_MINUS_CASA_DATA.coords["site"],
+                AMERIFLUX_MINUS_CASA_DATA.coords["site"].values,
             ),
             "time_lag": (
                 ("time_lag",),
