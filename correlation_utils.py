@@ -52,7 +52,7 @@ def get_autocorrelation_stats(column):
         index=timedelta_index, columns=["acf", "acovf", "pair_counts"]
     )
     result.loc[:, "acovf"] = acovf(
-        column, missing="conservative", unbiased=True, fft=True,
+        column, missing="conservative", adjusted=True, fft=True,
     ).astype(np.float32)
     result.loc[:, "acf"] = acf(
         column, missing="conservative", nlags=n_lags, adjusted=True, fft=True
