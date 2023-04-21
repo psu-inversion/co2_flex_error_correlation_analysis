@@ -6,6 +6,8 @@ from __future__ import division, print_function
 
 import calendar
 import datetime
+import io
+import os
 
 import cartopy.crs as ccrs
 import cartopy.feature as cfeat
@@ -14,6 +16,7 @@ import matplotlib as mpl
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+from PIL import Image
 import seaborn as sns
 import xarray
 from pandas.plotting import register_matplotlib_converters
@@ -22,6 +25,9 @@ import correlation_function_fits
 import correlation_utils
 import flux_correlation_function_fits
 
+# These defaults should probably be in matplotlibrc
+mpl.rcParams["figure.dpi"] = 144
+mpl.rcParams["savefig.dpi"] = 300
 register_matplotlib_converters()
 
 ############################################################
@@ -373,14 +379,14 @@ CORRELATION_TIMES = (
     correlation_data.index.values.astype("m8[h]").astype("i8").astype("f4") / 24
 )
 CORRELATIONS = {
-    "Best overall function": flux_correlation_function_fits.dc_dmc_ap_curve_ne(
+    "EC-driven: with ann.": flux_correlation_function_fits.dc_dmc_ap_curve_ne(
         CORRELATION_TIMES,
         **MEAN_COEFFICIENTS.sel(correlation_function="dc_dmc_ap")
         .to_series()
         .dropna()
         .to_dict(),
     ),
-    "Best function w/o ann. cycle": flux_correlation_function_fits.dp_dmc_a0_curve_ne(
+    "EC-driven no ann.": flux_correlation_function_fits.dp_dmc_a0_curve_ne(
         CORRELATION_TIMES,
         **MEAN_COEFFICIENTS.sel(correlation_function="dp_dmc_a0")
         .to_series()
@@ -389,19 +395,26 @@ CORRELATIONS = {
     ),
 }
 
+LINE_STYLES = ["-", "--", ":", "-."]
 with mpl.rc_context(
     {
-        "axes.prop_cycle": mpl.rcParams["axes.prop_cycle"][:4]
-        + cycler.cycler("linestyle", ["-", "--", ":", "-."])
+        "axes.prop_cycle": (
+            mpl.rcParams["axes.prop_cycle"][:4]
+            + cycler.cycler("linestyle", LINE_STYLES)
+        )
     }
 ):
     # Plot the modeled correlations
     MODELED_CORRELATION_LINES = []
     for ax in multi_corr_axes.flat:
-        for label, modeled_corr in CORRELATIONS.items():
+        for (label, modeled_corr), linestyle in zip(CORRELATIONS.items(), LINE_STYLES):
             MODELED_CORRELATION_LINES.extend(
                 ax.plot(
-                    correlation_data.index.values, modeled_corr, alpha=0.6, label=label
+                    correlation_data.index.values,
+                    modeled_corr,
+                    alpha=0.6,
+                    label=label,
+                    linestyle=linestyle,
                 )
             )
 
@@ -494,8 +507,183 @@ ax.add_feature(cfeat.STATES, edgecolor="gray")
 fig.savefig(
     "ameriflux-towers-at-least-{n_years:d}-years-data.pdf".format(
         n_years=MIN_YEARS_DATA
-    )
+    ),
+    bbox_inches="tight"
 )
 
 for site_name in LONG_DATA_SITES:
     pass
+
+plt.close(fig)
+
+
+# Plot CASA data
+# Overlay tower locs on CASA data
+# Turn the highlighted sites a different color
+def savefig(
+    figure: mpl.figure.Figure, path: str, dpi: int = None, ncolors: int = None
+) -> None:
+    """Save figure to path as png with given dpi and pallette size.
+
+    Parameters
+    ----------
+    figure : mpl.figure.Figure
+        The figure to save
+    path : str
+        The destination path.
+    dpi : int, optional
+        Desired resolution, in dots per inch.  72 dpi is common in web
+        applications, monitors now tend to be 96 or 144 dpi, and good
+        printers can do 300 dpi.
+    ncolors : int, optional
+        Number of colors to use for quantization.  This is done after
+        matplotlib rasterizes the figure, so figures with lots of
+        small detail may need extra colors for aliasing.
+
+    Examples
+    --------
+    FIXME: Add docs.
+
+    """
+    with io.BytesIO() as stream:
+        figure.savefig(stream, dpi=dpi, format="png")
+        stream.seek(0)
+        with Image.open(stream, formats=["png"]) as image:
+            if ncolors is not None:
+                image = image.quantize(ncolors, dither=Image.NONE)
+            image.save(path)
+
+
+CASA_DATA_PATH = (
+    "../casa_downscaling/orders/0fb5e27b5f7b886f55cb6639763e77ca/"
+    "ACT_CASA_Ensemble_Prior_Fluxes/data"
+)
+casa_ds = xarray.open_dataset(
+    os.path.join(
+        CASA_DATA_PATH, "CASA_L2_Ensemble_Mean_Monthly_Biogenic_NEE_CONUS_2010.nc4"
+    ),
+    decode_coords="all",
+    chunks={"time": 1, "y": 4000, "x": 4000},
+)
+casa_nee_july = (
+    casa_ds["Biogenic_NEE_Ensemble_Mean"]
+    .sel(time="2010-07")
+    .isel(time=0, drop=True)
+    # Original is 7288x10651 grid boxes
+    # Figure will be around 1200x1900 pixels
+    .coarsen(x=6, y=6, boundary="pad")
+    .mean()
+    .load()
+)
+projection_data = casa_ds.coords["lambert_conformal_conic"].attrs
+
+casa_nee_july_large = casa_nee_july
+# large is for 300 dpi images
+# 2x coarser for 144 dpi, 3x coarser for 96
+casa_nee_july = casa_nee_july_large.coarsen(x=3, y=3, boundary="pad").mean().load()
+
+print("Creating CASA figure")
+fig, ax = plt.subplots(
+    1,
+    1,
+    figsize=(6.5, 3.5),
+    subplot_kw={
+        "projection": ccrs.LambertConformal(
+            central_longitude=projection_data["longitude_of_central_meridian"],
+            central_latitude=projection_data["latitude_of_projection_origin"],
+            standard_parallels=projection_data["standard_parallel"],
+            globe=ccrs.Globe(
+                semimajor_axis=projection_data["semi_major_axis"],
+                inverse_flattening=projection_data["inverse_flattening"],
+            ),
+        )
+    },
+)
+grid = casa_nee_july.plot.pcolormesh(ax=ax)
+ax.coastlines()
+ax.add_feature(cfeat.STATES, edgecolor="gray", linewidth=1)
+ax.set_title("CASA NEE for July 2010")
+cax = fig.axes[1]
+cax.set_ylabel("CASA ensemble-mean NEE\n(g C/m$^2$/month)")
+
+print("Saving figure with just CASA")
+# fig.savefig("casa-ensemble-mean-nee-2010-07.png", dpi=288)
+savefig(fig, "casa-ensemble-mean-nee-2010-07.png", dpi=144, ncolors=128)
+
+ax.plot(
+    LONG_DATA_LONGITUDES,
+    LONG_DATA_LATITUDES,
+    ".",
+    transform=ccrs.PlateCarree(),
+    markerfacecolor="xkcd:violet",
+    markeredgecolor="xkcd:violet",
+)
+ax.set_title("CASA NEE for July 2010 with tower locations")
+print("Saving figure with CASA and tower locs")
+# fig.savefig("casa-ensemble-mean-nee-2020-07-with-towers.png", dpi=288)
+savefig(fig, "casa-ensemble-mean-nee-2010-07-with-towers.png", dpi=144, ncolors=128)
+
+ax.plot(
+    LONG_DATA_LONGITUDES.sel(
+        site=[sites[0] for sites in REPRESENTATIVE_DATA_SITES.values()]
+    ),
+    LONG_DATA_LATITUDES.sel(
+        site=[sites[0] for sites in REPRESENTATIVE_DATA_SITES.values()]
+    ),
+    ".",
+    transform=ccrs.PlateCarree(),
+    markerfacecolor="xkcd:lime",
+    markeredgecolor="xkcd:lime",
+)
+print("Saving figure with CASA, tower locs, and highlights on example towers")
+# fig.savefig("casa-ensemble-mean-nee-2010-07-with-towers-highlighted.png", dpi=288)
+savefig(
+    fig,
+    "casa-ensemble-mean-nee-2010-07-with-towers-highlighted.png",
+    dpi=144,
+    ncolors=128,
+)
+
+site_name = "US-PFa"
+site_df = site_data.to_dataframe().loc[:, site_data.data_vars].resample("1H").mean()
+site_data = MATCHED_DATA_DS.sel(site=site_name).load().dropna("time", how="any")
+correlation_data = correlation_utils.get_autocorrelation_stats(
+    site_df["flux_difference"]
+)
+fig, axes = plt.subplots(3, 1, figsize=(6.5, 5))
+site_df["ameriflux_fluxes"].plot.line(ax=axes[0], label="AmeriFlux")
+site_df["casa_fluxes"].plot.line(ax=axes[0], label="CASA")
+resids = site_df["ameriflux_fluxes"] - site_df["casa_fluxes"]
+resids.plot.line(ax=axes[1])
+correlation_data["acf"].plot.line(ax=axes[2])
+
+import matplotlib.dates as mdates
+
+date_fmt = mdates.DateFormatter("%d\n%b")
+for i in range(2):
+    axes[i].set_xlim("2007-06-01", "2007-07-31")
+    # axes[i].xaxis.set_major_formatter(date_fmt)
+    axes[i].set_xticklabels(["\nJune", "\nJuly", "\nJuly"])
+
+axes[2].set_xlim(np.array([0, 60], dtype="m8[D]").astype("m8[ns]"))
+axes[2].set_ylim(-1, 1)
+
+xtick_index = pd.timedelta_range(
+    start=correlation_data.index[0],
+    end=correlation_data.index[60 * HOURS_PER_DAY],
+    freq="7D",
+)
+axes[-1].set_xlim(xtick_index[[0, -1]].astype("i8").astype("f4"))
+axes[-1].set_xticks(xtick_index.astype("i8").astype("f4"))
+axes[-1].set_xticklabels(np.arange(len(xtick_index)))
+axes[-1].set_xlabel("Time difference (weeks)")
+# fig.subplots_adjust(top=0.95, hspace=0.3, hspace=0.8)
+fig.suptitle(site_name)
+
+axes[1].set_xlabel("Time")
+axes[2].set_xlabel("Time difference (weeks)")
+axes[0].set_ylabel("NEE\n(\N{MICRO SIGN}mol/m\N{SUPERSCRIPT TWO}/s)")
+axes[1].set_ylabel("Residual\n(\N{MICRO SIGN}mol/m\N{SUPERSCRIPT TWO}/s)")
+axes[2].set_ylabel("Autocorrelation\n(unitless)")
+
+fig.savefig("US-PFa-time-series-correlations-short.pdf")

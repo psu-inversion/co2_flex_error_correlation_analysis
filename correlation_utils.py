@@ -62,7 +62,7 @@ def get_autocorrelation_stats(column):
         fft=True,
     ).astype(np.float32)
     result.loc[:, "acf"] = acf(
-        column, missing="conservative", nlags=n_lags, unbiased=True, fft=True
+        column, missing="conservative", nlags=n_lags, adjusted=True, fft=True
     ).astype(np.float32)
     result.loc[:, "pair_counts"] = count_pairs(column)
     return result

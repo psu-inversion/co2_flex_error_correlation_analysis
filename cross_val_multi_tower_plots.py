@@ -3,6 +3,9 @@ from __future__ import print_function
 
 import collections
 
+import numpy as np
+import matplotlib as mpl
+mpl.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -17,7 +20,8 @@ from statsmodels.stats.anova import anova_lm
 sns.set_context("paper")
 sns.set(style="ticks")
 sns.set_palette("colorblind")
-
+mpl.rcParams["figure.dpi"] = 144
+mpl.rcParams["savefig.dpi"] = 300
 
 ############################################################
 # Define description function
@@ -151,23 +155,17 @@ ds = xarray.open_dataset("multi-tower-cross-validation-error-data-1050-splits.nc
 
 ############################################################
 # Turn dataset into dataframe
-df = (
-    ds["cross_validation_error"]
-    .to_dataframe()
-    .replace(
-        {
-            "Geostatistical": "Geostat.",
-            "Exponential sine-squared": "Exp. sin\N{SUPERSCRIPT TWO}",
-            "3-term cosine series": "Cosines",
-        }
-    )
-)
+df = ds["cross_validation_error"].to_dataframe().replace({
+    "Geostatistical": "Decoupled",
+    "Exponential sine-squared": "Exp. sin\N{SUPERSCRIPT TWO}",
+    "3-term cosine series": "Cosines"
+})
 
 for slot_var in ("daily_cycle", "annual_cycle", "annual_modulation_of_daily_cycle"):
     df[slot_var] = pd.Categorical(
         df[slot_var],
-        categories=["None", "Geostat.", "Exp. sin\N{SUPERSCRIPT TWO}", "Cosines"],
-        ordered=True,
+        categories=["None", "Decoupled", "Exp. sin\N{SUPERSCRIPT TWO}", "Cosines"],
+        ordered=True
     )
 
 slot_forms_dtype = df[slot_var].dtype
@@ -228,10 +226,10 @@ for i in range(3 + 1):
         for i, col in enumerate(full_X.columns)
         if (
             (
-                ":daily_cycle[T.Geostat.]" not in col
-                and not col.startswith("daily_cycle[T.Geostat.]:")
-            )
-            or "annual_modulation_of_daily_cycle" not in col
+                ":daily_cycle[T.Decoupled]" not in col and
+                not col.startswith("daily_cycle[T.Decoupled]:")
+            ) or
+            "annual_modulation_of_daily_cycle" not in col
         )
     ]
     reduced_X = full_X.iloc[:, col_index_to_keep]
@@ -279,6 +277,9 @@ for ax in grid.axes[:, -1]:
         if isinstance(child, plt.Text):
             child.set_visible(False)
 
+for ax in grid.axes[:, 0]:
+    ax.set_ylabel("Annual\nModulation\nof Daily Cycle")
+
 grid.axes[0, -1].set_title("", visible=True)
 grid.axes[0, 0].set_xlim(0, None)
 grid.set_titles(
@@ -287,15 +288,15 @@ grid.set_titles(
 )
 grid.set_xlabels("Cross-Validation\nError")
 grid.fig.tight_layout()
-grid.fig.savefig("multi-tower-cross-validation-error-by-function.pdf")
-grid.fig.savefig("multi-tower-cross-validation-error-by-function.png")
+grid.fig.savefig("multi-tower-cross-validation-error-by-function.pdf", bbox_inches="tight")
+grid.fig.savefig("multi-tower-cross-validation-error-by-function.png", bbox_inches="tight")
 
 for ax in grid.axes.flat:
     ax.set_xscale("log")
     ax.set_xlim(0.08e9, 4e9)
 
-grid.fig.savefig("multi-tower-log-cross-validation-error-by-function.pdf")
-grid.fig.savefig("multi-tower-log-cross-validation-error-by-function.png")
+grid.fig.savefig("multi-tower-log-cross-validation-error-by-function.pdf", bbox_inches="tight")
+grid.fig.savefig("multi-tower-log-cross-validation-error-by-function.png", bbox_inches="tight")
 
 ############################################################
 # Draw boxplots showing details of distribution for best functions
@@ -306,7 +307,7 @@ df_for_best_plot = df_for_plot.loc[
     (low_cv_err.index[low_cv_err.values], slice(None)), :
 ]
 for slot_var in ("Daily Cycle", "Annual Cycle", "Annual Modulation\nof Daily Cycle"):
-    df_for_best_plot[slot_var] = pd.Categorical(
+    df_for_best_plot.loc[:, slot_var] = pd.Categorical(
         df_for_best_plot[slot_var],
     ).remove_unused_categories()
 
@@ -332,6 +333,9 @@ for ax in grid.axes[:, -1]:
         if isinstance(child, plt.Text):
             child.set_visible(False)
 
+for ax in grid.axes[:, 0]:
+    ax.set_ylabel("Annual\nModulation\nof Daily Cycle")
+
 grid.axes[0, -1].set_title("", visible=True)
 grid.axes[0, 0].set_xlim(0, None)
 grid.set_titles(
@@ -340,15 +344,15 @@ grid.set_titles(
 )
 grid.set_xlabels("Cross-Validation\nError")
 grid.fig.tight_layout()
-grid.fig.savefig("multi-tower-cross-validation-best-error-by-function.pdf")
-grid.fig.savefig("multi-tower-cross-validation-best-error-by-function.png")
+grid.fig.savefig("multi-tower-cross-validation-best-error-by-function.pdf", bbox_inches="tight")
+grid.fig.savefig("multi-tower-cross-validation-best-error-by-function.png", bbox_inches="tight")
 
 for ax in grid.axes.flat:
     ax.set_xscale("log")
     ax.set_xlim(0.08e9, 4e9)
 
-grid.fig.savefig("multi-tower-log-cross-validation-best-error-by-function.pdf")
-grid.fig.savefig("multi-tower-log-cross-validation-best-error-by-function.png")
+grid.fig.savefig("multi-tower-log-cross-validation-best-error-by-function.pdf", bbox_inches="tight")
+grid.fig.savefig("multi-tower-log-cross-validation-best-error-by-function.png", bbox_inches="tight")
 
 ############################################################
 # Sorted box plots
@@ -399,8 +403,8 @@ fig.savefig("multi-tower-cross-validation-error-sorted-wide.pdf")
 fig.savefig("multi-tower-cross-validation-error-sorted-wide.png")
 
 ax.set_yscale("log")
-fig.savefig("multi-tower-cross-validation-error-sorted-wide.pdf")
-fig.savefig("multi-tower-cross-validation-error-sorted-wide.png")
+fig.savefig("multi-tower-log-cross-validation-error-sorted-wide.pdf")
+fig.savefig("multi-tower-log-cross-validation-error-sorted-wide.png")
 
 ############################################################
 # Compare means with CIs
@@ -417,7 +421,7 @@ grid = sns.catplot(
     aspect=0.5,
 )
 grid.fig.autofmt_xdate()
-grid.axes[0, 0].set_ylabel("Mean Cross-Validation Error\n(unitless; lower is better)")
+grid.axes[0, 0].set_ylabel("Mean Cross-Validation Error\n(unitless; log scale; lower is better)")
 grid.set_titles(
     row_template="{row_var: ^11s}\n{row_name: ^11s}",
     col_template="{col_var: ^11s}\n{col_name: ^11s}",
@@ -425,8 +429,8 @@ grid.set_titles(
 for ax in grid.axes[0, :]:
     ylim = grid.axes[0, 0].get_ylim()
 
-grid.fig.savefig("multi-tower-cross-validation-log-error-anova-variations.pdf")
-grid.fig.savefig("multi-tower-cross-validation-log-error-anova-variations.png")
+grid.fig.savefig("multi-tower-cross-validation-log-error-anova-variations.pdf", bbox_inches="tight")
+grid.fig.savefig("multi-tower-cross-validation-log-error-anova-variations.png", bbox_inches="tight")
 
 ############################################################
 # Compare best means with CIs
@@ -451,8 +455,8 @@ grid.set_titles(
 for ax in grid.axes[0, :]:
     ylim = grid.axes[0, 0].get_ylim()
 
-grid.fig.savefig("multi-tower-cross-validation-best-error-anova-variations.pdf")
-grid.fig.savefig("multi-tower-cross-validation-best-error-anova-variations.png")
+grid.fig.savefig("multi-tower-cross-validation-best-error-anova-variations.pdf", bbox_inches="tight")
+grid.fig.savefig("multi-tower-cross-validation-best-error-anova-variations.png", bbox_inches="tight")
 
 ############################################################
 # Calculate summary statistics
@@ -499,6 +503,7 @@ fig.savefig("multi-tower-cross-validation-error-vs-n-params.png")
 
 ax.set_yscale("log")
 ylim = ax.get_ylim()
+ax.set_ylabel("Mean Cross-Validation Error\n(unitless; log scale; lower is better)")
 fig.savefig("multi-tower-log-cross-validation-error-vs-n-params.pdf")
 fig.savefig("multi-tower-log-cross-validation-error-vs-n-params.png")
 
@@ -517,27 +522,18 @@ ldesc_ds.to_netcdf(
 ############################################################
 # Plot variation in parameter values
 parameter_variation_df = (
-    (
-        ds["optimized_parameters"].reduce(
-            scipy.stats.iqr, dim="splits", nan_policy="omit"
-        )
-        / np.abs(ds["optimized_parameters"].median("splits"))
-    )
-    .to_dataframe()
-    .replace(
-        {
-            "Geostatistical": "Geostat.",
-            "Exponential sine-squared": "Exp. sin\N{SUPERSCRIPT TWO}",
-            "3-term cosine series": "Cosines",
-        }
-    )
-    .rename(
-        columns={
-            "annual_modulation_of_daily_cycle": "Annual Modulation\nof Daily Cycle",
-            "annual_cycle": "Annual Cycle",
-            "daily_cycle": "Daily Cycle",
-        }
-    )
+   ds["optimized_parameters"].reduce(scipy.stats.iqr, dim="splits", nan_policy="omit") /
+    np.abs(ds["optimized_parameters"].median("splits"))
+).to_dataframe().replace({
+    "Geostatistical": "Decoupled",
+    "Exponential sine-squared": "Exp. sin\N{SUPERSCRIPT TWO}",
+    "3-term cosine series": "Cosines"
+}).rename(
+    columns={
+        "annual_modulation_of_daily_cycle": "Annual Modulation\nof Daily Cycle",
+        "annual_cycle": "Annual Cycle",
+        "daily_cycle": "Daily Cycle"
+    }
 )
 
 parameter_variation_df[

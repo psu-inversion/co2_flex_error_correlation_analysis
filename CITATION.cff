@@ -1,0 +1,23 @@
+cff-version: 1.2.0
+title: ' co2_flux_error_correlation_analysis'
+message: >-
+  If you use this software, please cite it using the
+  metadata from this file.
+type: software
+authors:
+  - given-names: DWesl
+    orcid: 'https://orcid.org/0000-0003-0956-6783'
+    affiliation: Pennsylvania State University
+repository-code: >-
+  https://github.com/psu-inversion/co2_flux_error_correlation_analysis
+abstract: 'Codes for calculation of temporal correlations in model-data differences, creating and fitting mathematical models, and cross-validating the fits. '
+keywords:
+  - carbon flux
+  - CO2 flux error correlation
+  - autocorrelation functions
+  - mathematical modelling
+license: BSD-3-Clause
+url: "https://github.com/psu-inversion/co2_flux_error_correlation_analysis"
+identifiers:
+  - type: 'url'
+    value: 'https://github.com/psu-inversion/co2_flux_error_correlation_analysis'

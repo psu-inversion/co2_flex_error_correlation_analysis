@@ -103,7 +103,9 @@ class PartForm(Enum):
     PERIODIC = P
     EXPSIN2 = P
 
-    G = "Geostatistical"
+    D = "Decoupled"
+    DECOUPLED = D
+    G = D
     GEOSTAT = G
 
     def get_short_name(self):

@@ -1,0 +1,20 @@
+{
+  "creators": [
+    {
+      "affiliation": "Pennsylvania State University",
+      "name": "DWesl",
+      "orcid": "0000-0003-0956-6783"
+    }
+  ],
+  "description": "Codes for calculation of temporal correlations in model-data differences, creating and fitting mathematical models, and cross-validating the fits. ",
+  "keywords": [
+    "carbon flux",
+    "CO2 flux error correlation",
+    "autocorrelation functions",
+    "mathematical modelling"
+  ],
+  "license": {
+    "id": "BSD-3-Clause"
+  },
+  "title": " co2_flux_error_correlation_analysis"
+}
