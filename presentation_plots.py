@@ -25,6 +25,7 @@ import correlation_function_fits
 import correlation_utils
 import flux_correlation_function_fits
 
+# These defaults should probably be in matplotlibrc
 mpl.rcParams["figure.dpi"] = 144
 mpl.rcParams["savefig.dpi"] = 300
 register_matplotlib_converters()

@@ -14,27 +14,25 @@ import logging
 import random
 
 import numpy as np
-import scipy.optimize
 import pandas as pd
 import pint
+import scipy.optimize
 import xarray
 
 import flux_correlation_function_fits
-from correlation_utils import get_autocorrelation_stats
-
 from correlation_function_fits import (
-    CorrelationPart, PartForm,
-    is_valid_combination,
+    CorrelationPart,
+    PartForm,
     get_full_parameter_list,
+    is_valid_combination,
 )
+from correlation_utils import get_autocorrelation_stats
 
 print(datetime.datetime.now())
 
 CORRELATION_PARTS_LIST = [
     (day_part, dm_part, ann_part)
-    for day_part, dm_part, ann_part in itertools.product(
-        PartForm, PartForm, PartForm
-    )
+    for day_part, dm_part, ann_part in itertools.product(PartForm, PartForm, PartForm)
     if is_valid_combination(day_part, dm_part, ann_part)
 ]
 
@@ -79,23 +77,19 @@ def has_enough_data(da):
     -------
     bool
     """
-    time_index_name = [
-        name
-        for name in da.dims
-        if "time" in name.lower()
-    ][0]
+    time_index_name = [name for name in da.dims if "time" in name.lower()][0]
     time_index = da.indexes[time_index_name]
     if len(time_index) < 1:
         _LOGGER.debug("No data")
         return False
     if time_index[-1] - time_index[0] < datetime.timedelta(
-            days=N_YEARS_DATA * DAYS_PER_YEAR
+        days=N_YEARS_DATA * DAYS_PER_YEAR
     ):
         _LOGGER.debug("< 2 years")
         return False
     if (
-            da.count(time_index_name).values[()] <
-            REQUIRED_DATA_FRAC * N_YEARS_DATA * HOURS_PER_YEAR
+        da.count(time_index_name).values[()]
+        < REQUIRED_DATA_FRAC * N_YEARS_DATA * HOURS_PER_YEAR
     ):
         _LOGGER.debug("Missing data")
         return False
@@ -137,18 +131,14 @@ def select_tower_subset(corr_data, towers):
     """
     corr_data_towers = corr_data.sel(site=towers)
 
-    n_pairs = corr_data_towers[
-        "flux_error_n_pairs"
-    ]
+    n_pairs = corr_data_towers["flux_error_n_pairs"]
     # # Make sure elements with no data are zero
     # # All data should already be zero.
     # corr_data_towers = corr_data_towers.where(n_pairs >= 1, 0)
     n_pairs_tot = n_pairs.sum("site")
     # 0.15.1 introduces a weighted() method that does the same thing,
     # but it's only three and a half months old so far.
-    corr_data = (
-        corr_data_towers * n_pairs
-    ).sum(dim="site") / n_pairs_tot
+    corr_data = (corr_data_towers * n_pairs).sum(dim="site") / n_pairs_tot
     corr_data["flux_error_n_pairs"] = n_pairs_tot
     corr_data = corr_data.sel(
         time_lag=n_pairs_tot >= 1,
@@ -157,7 +147,7 @@ def select_tower_subset(corr_data, towers):
     acf_lags = timedelta_index_to_floats(
         pd.TimedeltaIndex(corr_data.coords["time_lag"])
     )
-    acf_weights = 1. / np.sqrt(corr_data["flux_error_n_pairs"])
+    acf_weights = 1.0 / np.sqrt(corr_data["flux_error_n_pairs"])
     assert np.isfinite(acf_weights).all()
 
     return corr_data, acf_lags, acf_weights
@@ -166,61 +156,61 @@ def select_tower_subset(corr_data, towers):
 ############################################################
 # Set initial values and bounds for the parameters
 STARTING_PARAMS = dict(
-    daily_coef = 0.5,
-    daily_coef1 = .7,
-    daily_coef2 = .3,
-    daily_width = .5,
-    daily_timescale = 500,  # fortnights
-    dm_width = .8,
-    dm_coef1 = .3,
-    dm_coef2 = +.1,
-    ann_coef1 = +.8,
-    ann_coef2 = +.4,
-    ann_coef = 0.03,
-    ann_width = .6,
-    ann_timescale = 3.,  # decades
-    resid_coef = 0.03,
-    resid_timescale = 2.,  # fortnights
-    ec_coef = 0.5,
-    ec_timescale = 3.,  # hours
+    daily_coef=0.5,
+    daily_coef1=0.7,
+    daily_coef2=0.3,
+    daily_width=0.5,
+    daily_timescale=500,  # fortnights
+    dm_width=0.8,
+    dm_coef1=0.3,
+    dm_coef2=+0.1,
+    ann_coef1=+0.8,
+    ann_coef2=+0.4,
+    ann_coef=0.03,
+    ann_width=0.6,
+    ann_timescale=3.0,  # decades
+    resid_coef=0.03,
+    resid_timescale=2.0,  # fortnights
+    ec_coef=0.5,
+    ec_timescale=3.0,  # hours
 )
 PARAM_LOWER_BOUNDS = dict(
-    daily_coef = -10,
-    daily_coef1 = -10,
-    daily_coef2 = -10,
-    daily_width = 0,
-    daily_timescale = 0,  # fortnights
-    dm_width = 0,
-    dm_coef1 = -10,
-    dm_coef2 = -10,
-    ann_coef1 = -10,
-    ann_coef2 = -10,
-    ann_coef = -10,
-    ann_width = 0,
-    ann_timescale = 0,  # decades
-    resid_coef = -10,
-    resid_timescale = 0.,  # fortnights
-    ec_coef = -10,
-    ec_timescale = 0.,  # hours
+    daily_coef=-10,
+    daily_coef1=-10,
+    daily_coef2=-10,
+    daily_width=0,
+    daily_timescale=0,  # fortnights
+    dm_width=0,
+    dm_coef1=-10,
+    dm_coef2=-10,
+    ann_coef1=-10,
+    ann_coef2=-10,
+    ann_coef=-10,
+    ann_width=0,
+    ann_timescale=0,  # decades
+    resid_coef=-10,
+    resid_timescale=0.0,  # fortnights
+    ec_coef=-10,
+    ec_timescale=0.0,  # hours
 )
 PARAM_UPPER_BOUNDS = dict(
-    daily_coef = 10,
-    daily_coef1 = 10,
-    daily_coef2 = 10,
-    daily_width = 10,
-    daily_timescale = 500,  # fortnights
-    dm_width = 10,
-    dm_coef1 = 10,
-    dm_coef2 = 10,
-    ann_coef1 = 10,
-    ann_coef2 = 10,
-    ann_coef = 10,
-    ann_width = 10,
-    ann_timescale = 4,  # decades
-    resid_coef = 10,
-    resid_timescale = 500.,  # fortnights
-    ec_coef = 10,
-    ec_timescale = 1000.,  # hours
+    daily_coef=10,
+    daily_coef1=10,
+    daily_coef2=10,
+    daily_width=10,
+    daily_timescale=500,  # fortnights
+    dm_width=10,
+    dm_coef1=10,
+    dm_coef2=10,
+    ann_coef1=10,
+    ann_coef2=10,
+    ann_coef=10,
+    ann_width=10,
+    ann_timescale=4,  # decades
+    resid_coef=10,
+    resid_timescale=500.0,  # fortnights
+    ec_coef=10,
+    ec_timescale=1000.0,  # hours
 )
 
 # Convert initial values and bounds to float32
@@ -244,14 +234,9 @@ DATA_COUNTS = AMERIFLUX_MINUS_CASA_DATA["flux_difference"].count("time").load()
 SITES_TO_KEEP = [
     site
     for site in AMERIFLUX_MINUS_CASA_DATA.indexes["site"]
-    if (
-        DATA_COUNTS.sel(site=site) >
-        HOURS_PER_YEAR * N_YEARS_DATA * REQUIRED_DATA_FRAC
-    )
+    if (DATA_COUNTS.sel(site=site) > HOURS_PER_YEAR * N_YEARS_DATA * REQUIRED_DATA_FRAC)
 ]
-AMERIFLUX_MINUS_CASA_DATA = AMERIFLUX_MINUS_CASA_DATA.sel(
-    site=SITES_TO_KEEP
-).persist()
+AMERIFLUX_MINUS_CASA_DATA = AMERIFLUX_MINUS_CASA_DATA.sel(site=SITES_TO_KEEP).persist()
 
 TIME_LAG_INDEX = pd.timedelta_range(
     start=0, freq="1H", periods=AMERIFLUX_MINUS_CASA_DATA.dims["time"]
@@ -376,9 +361,7 @@ AUTOCORRELATION_DATA = xarray.open_dataset(
 AUTOCORRELATION_FOR_CURVE_FIT = dict()
 
 for tower in SITES_TO_KEEP:
-    corr_data = AUTOCORRELATION_DATA.sel(
-        site=tower
-    ).dropna("time_lag")
+    corr_data = AUTOCORRELATION_DATA.sel(site=tower).dropna("time_lag")
     corr_data = corr_data.where(
         corr_data["flux_error_n_pairs"] > 0,
         drop=True,
@@ -389,7 +372,7 @@ for tower in SITES_TO_KEEP:
 
 LIST_OF_SITES = list(AUTOCORRELATION_FOR_CURVE_FIT)
 random.shuffle(LIST_OF_SITES)
-SITES_TO_FIT = LIST_OF_SITES[:N_TRAINING + N_HYPER_TRAIN]
+SITES_TO_FIT = LIST_OF_SITES[: N_TRAINING + N_HYPER_TRAIN]
 
 ############################################################
 # Set up dataset for results
@@ -405,11 +388,10 @@ CROSS_TOWER_FIT_ERROR_DS = xarray.Dataset(
                 np.nan,
                 # I could probably get away with storing float16, but I
                 # don't think netcdf can handle that.
-                dtype=np.float32
+                dtype=np.float32,
             ),
             {
-                "long_name":
-                "flux_error_correlation_function_cross_validation_error",
+                "long_name": "flux_error_correlation_function_cross_validation_error",
                 "comment": "lower is better",
                 "units": "1",
                 "valid_min": 0,
@@ -427,8 +409,7 @@ CROSS_TOWER_FIT_ERROR_DS = xarray.Dataset(
                 dtype=np.float32,
             ),
             {
-                "long_name":
-                "flux_error_correlation_function_fitted_parameters",
+                "long_name": "flux_error_correlation_function_fitted_parameters",
                 "units": [
                     "1",  #    daily_coef = 0.2,
                     "1",  #    daily_coef1 = .7,
@@ -451,8 +432,12 @@ CROSS_TOWER_FIT_ERROR_DS = xarray.Dataset(
             },
         ),
         "optimized_parameters_estimated_covariance_matrix": (
-            ("correlation_function", "splits",
-             "parameter_name_adjoint", "parameter_name"),
+            (
+                "correlation_function",
+                "splits",
+                "parameter_name_adjoint",
+                "parameter_name",
+            ),
             np.full(
                 (
                     len(CORRELATION_PARTS_LIST),
@@ -464,13 +449,11 @@ CROSS_TOWER_FIT_ERROR_DS = xarray.Dataset(
                 dtype=np.float32,
             ),
             {
-                "long_name":
-                "flux_error_correlation_function_fitted_parameters"
+                "long_name": "flux_error_correlation_function_fitted_parameters"
                 " covariance_matrix",
             },
         ),
     },
-
     {
         "splits": (
             ("splits",),
@@ -498,107 +481,106 @@ CROSS_TOWER_FIT_ERROR_DS = xarray.Dataset(
                 "daily_{0.value:s}_daily_modulation_{1.value:s}_"
                 "annual_{2.value:s}".format(*parts)
                 for parts in CORRELATION_PARTS_LIST
-            ]
+            ],
         ),
         "correlation_function_short_name": (
             ("correlation_function",),
             [
-                "_".join([
-                    "{0:s}{1:s}".format(
-                        part.get_short_name(),
-                        form.get_short_name(),
-                    )
-                    for part, form in zip(CorrelationPart, forms)
-                ])
+                "_".join(
+                    [
+                        "{0:s}{1:s}".format(
+                            part.get_short_name(),
+                            form.get_short_name(),
+                        )
+                        for part, form in zip(CorrelationPart, forms)
+                    ]
+                )
                 for forms in CORRELATION_PARTS_LIST
             ],
         ),
         "has_daily_cycle": (
             ("correlation_function",),
             np.array(
-                [forms[0] != PartForm.NONE
-                 for forms in CORRELATION_PARTS_LIST],
-                dtype=bool
+                [forms[0] != PartForm.NONE for forms in CORRELATION_PARTS_LIST],
+                dtype=bool,
             ),
             {
                 "long_name": "has_daily_cycle",
-                "description":
-                    "whether the associated correlation function attempts to "
-                    "fit a daily cycle in the autocorrelations",
+                "description": "whether the associated correlation function attempts to "
+                "fit a daily cycle in the autocorrelations",
             },
         ),
         "daily_cycle_has_modulation": (
             ("correlation_function",),
             np.array(
-                [forms[1] != PartForm.NONE
-                 for forms in CORRELATION_PARTS_LIST],
+                [forms[1] != PartForm.NONE for forms in CORRELATION_PARTS_LIST],
                 dtype=bool,
             ),
             {
                 "long_name": "daily_cycle_has_modulation",
-                "description":
-                    "whether the associated correlation function attempts to "
-                    "fit an annual modulation of the daily cycle in the "
-                    "autocorrelations",
+                "description": "whether the associated correlation function attempts to "
+                "fit an annual modulation of the daily cycle in the "
+                "autocorrelations",
             },
         ),
         "has_annual_cycle": (
             ("correlation_function",),
             np.array(
-                [forms[2] != PartForm.NONE
-                 for forms in CORRELATION_PARTS_LIST],
-                dtype=bool
+                [forms[2] != PartForm.NONE for forms in CORRELATION_PARTS_LIST],
+                dtype=bool,
             ),
             {
                 "long_name": "has_annual_cycle",
-                "description":
-                    "whether the associated correlation function attempts to "
-                    "fit an annual cycle in the autocorrelations",
-            }
+                "description": "whether the associated correlation function attempts to "
+                "fit an annual cycle in the autocorrelations",
+            },
         ),
         "daily_cycle_has_parameters": (
             ("correlation_function",),
             np.array(
-                [forms[0] != PartForm.NONE and forms[0] != PartForm.GEOSTAT
-                 for forms in CORRELATION_PARTS_LIST],
+                [
+                    forms[0] != PartForm.NONE and forms[0] != PartForm.GEOSTAT
+                    for forms in CORRELATION_PARTS_LIST
+                ],
                 dtype=bool,
             ),
             {
                 "long_name": "daily_cycle_has_parameters",
-                "description":
-                    "whether the associated correlation function attempts to "
-                    "fit parameters for a daily cycle in the autocorrelations",
+                "description": "whether the associated correlation function attempts to "
+                "fit parameters for a daily cycle in the autocorrelations",
             },
         ),
         "daily_cycle_modulation_has_parameters": (
             ("correlation_function",),
             np.array(
-                [forms[1] != PartForm.NONE and forms[1] != PartForm.GEOSTAT
-                 for forms in CORRELATION_PARTS_LIST],
+                [
+                    forms[1] != PartForm.NONE and forms[1] != PartForm.GEOSTAT
+                    for forms in CORRELATION_PARTS_LIST
+                ],
                 dtype=bool,
             ),
             {
                 "long_name": "daily_cycle_modulation_has_parameters",
-                "description":
-                    "whether the associated correlation function attempts to "
-                    "fit parameters for an annual modulation of the daily "
-                    "cycle in the autocorrelations",
+                "description": "whether the associated correlation function attempts to "
+                "fit parameters for an annual modulation of the daily "
+                "cycle in the autocorrelations",
             },
         ),
         "annual_cycle_has_parameters": (
             ("correlation_function",),
             np.array(
-                [forms[2] != PartForm.NONE and forms[2] != PartForm.GEOSTAT
-                 for forms in CORRELATION_PARTS_LIST],
-                dtype=bool
+                [
+                    forms[2] != PartForm.NONE and forms[2] != PartForm.GEOSTAT
+                    for forms in CORRELATION_PARTS_LIST
+                ],
+                dtype=bool,
             ),
             {
                 "long_name": "annual_cycle_has_parameters",
-                "description":
-                    "whether the associated correlation function attempts to "
-                    "fit parameters for an annual cycle in the "
-                    "autocorrelations",
-            }
+                "description": "whether the associated correlation function attempts to "
+                "fit parameters for an annual cycle in the "
+                "autocorrelations",
+            },
         ),
         "daily_cycle": (
             ("correlation_function",),
@@ -632,9 +614,9 @@ for i in range(N_SPLITS):
     random.shuffle(SITES_TO_FIT)
     training_towers = np.array(sorted(SITES_TO_FIT[:N_TRAINING]))
     validation_towers = np.array(sorted(SITES_TO_FIT[N_TRAINING:]))
-    CROSS_TOWER_FIT_ERROR_DS["training_towers"].sel(
-        splits=i
-    ).values[:] = training_towers
+    CROSS_TOWER_FIT_ERROR_DS["training_towers"].sel(splits=i).values[
+        :
+    ] = training_towers
     CROSS_TOWER_FIT_ERROR_DS["validation_towers"].sel(
         splits=i,
         n_validation=slice(None, len(validation_towers)),
@@ -646,8 +628,8 @@ for i in range(N_SPLITS):
     )
 
     # Set up validation data as well
-    corr_data_validate, acf_lags_validate, acf_weights_validate = (
-        select_tower_subset(AUTOCORRELATION_DATA, validation_towers)
+    corr_data_validate, acf_lags_validate, acf_weights_validate = select_tower_subset(
+        AUTOCORRELATION_DATA, validation_towers
     )
 
     FUNCTION_PARAMS_AND_COV.append([])
@@ -655,18 +637,18 @@ for i in range(N_SPLITS):
     for combination in CORRELATION_PARTS_LIST:
         _LOGGER.info("Fitting function: %s", combination)
         # Get function to optimize
-        func_short_name = "_".join([
-            "{0:s}{1:s}".format(
-                part.get_short_name(),
-                form.get_short_name(),
-            )
-            for part, form in zip(CorrelationPart, combination)
-        ])
+        func_short_name = "_".join(
+            [
+                "{0:s}{1:s}".format(
+                    part.get_short_name(),
+                    form.get_short_name(),
+                )
+                for part, form in zip(CorrelationPart, combination)
+            ]
+        )
         curve_function = getattr(
             flux_correlation_function_fits,
-            "{fun_name:s}_curve_ne".format(
-                fun_name=func_short_name
-            )
+            "{fun_name:s}_curve_ne".format(fun_name=func_short_name),
         )
         curve_and_derivative_function = getattr(
             flux_correlation_function_fits,
@@ -690,6 +672,7 @@ for i in range(N_SPLITS):
             deriv: np.ndarray[N, M]
             """
             return curve_and_derivative_function(tdata, *params)[1]
+
         # Set up parameters
         parameter_list = get_full_parameter_list(*combination)
         starting_params = np.array(
@@ -713,9 +696,7 @@ for i in range(N_SPLITS):
             opt_params, param_cov = scipy.optimize.curve_fit(
                 curve_function,
                 acf_lags_train.astype(np.float32),
-                corr_data_train[
-                    "flux_error_autocorrelation"
-                ].astype(np.float32).values,
+                corr_data_train["flux_error_autocorrelation"].astype(np.float32).values,
                 starting_params.astype(np.float32),
                 acf_weights_train.astype(np.float32),
                 bounds=(
@@ -734,7 +715,7 @@ for i in range(N_SPLITS):
             _LOGGER.debug("ACF lags:\n%s", acf_lags_train.astype(np.float32))
             _LOGGER.debug(
                 "Corr data:\n%s",
-                corr_data_train["flux_error_autocorrelation"].astype(np.float32).values
+                corr_data_train["flux_error_autocorrelation"].astype(np.float32).values,
             )
             continue
 
@@ -747,59 +728,63 @@ for i in range(N_SPLITS):
                     ),
                     "optimized_parameters_estimated_covariance_matrix": (
                         ("parameter_name_adjoint", "parameter_name"),
-                        param_cov
+                        param_cov,
                     ),
                 },
                 {
                     "parameter_name": (("parameter_name",), parameter_list),
                     "parameter_name_adjoint": (
-                        ("parameter_name_adjoint",), parameter_list
+                        ("parameter_name_adjoint",),
+                        parameter_list,
                     ),
-                    "training_towers": (("splits", "n_training",), training_towers.reshape(1, -1)),
-                    "correlation_function": (
-                        (), correlation_function_long_name
+                    "training_towers": (
+                        (
+                            "splits",
+                            "n_training",
+                        ),
+                        training_towers.reshape(1, -1),
                     ),
+                    "correlation_function": ((), correlation_function_long_name),
                     "splits": (
-                        ("splits",), np.array([i], dtype="i2"),
+                        ("splits",),
+                        np.array([i], dtype="i2"),
                     ),
                 },
             )
         )
 
         CROSS_TOWER_FIT_ERROR_DS["cross_validation_error"].sel(
-            correlation_function=(
-                correlation_function_long_name
-            ),
+            correlation_function=(correlation_function_long_name),
             splits=i,
         ).values[()] = mismatch_function(
             opt_params,
             acf_lags_validate,
-            corr_data_validate["flux_error_autocorrelation"].astype(
-                np.float32
-            ).values,
-            corr_data_validate["flux_error_n_pairs"].astype(
-                np.float32
-            ).values
+            corr_data_validate["flux_error_autocorrelation"].astype(np.float32).values,
+            corr_data_validate["flux_error_n_pairs"].astype(np.float32).values,
         )
         _LOGGER.info("Done fit and cross-validation")
     _LOGGER.info("Done cross-validation loop %d", i)
 
 FUNCTION_PARAMS_AND_COV_DS = xarray.concat(
-    [xarray.concat(ds_list, dim="correlation_function")
-     for ds_list in FUNCTION_PARAMS_AND_COV],
-    dim="splits"
+    [
+        xarray.concat(ds_list, dim="correlation_function")
+        for ds_list in FUNCTION_PARAMS_AND_COV
+    ],
+    dim="splits",
 )
-CROSS_TOWER_FIT_ERROR_DS = CROSS_TOWER_FIT_ERROR_DS.update(
-    FUNCTION_PARAMS_AND_COV_DS
-)
+CROSS_TOWER_FIT_ERROR_DS = CROSS_TOWER_FIT_ERROR_DS.update(FUNCTION_PARAMS_AND_COV_DS)
 
-encoding = {name: {"_FillValue": -9.999e9, "zlib": True}
-            for name in CROSS_TOWER_FIT_ERROR_DS.data_vars}
-encoding.update({name: {"_FillValue": None}
-                 for name in CROSS_TOWER_FIT_ERROR_DS.coords})
+encoding = {
+    name: {"_FillValue": -9.999e9, "zlib": True}
+    for name in CROSS_TOWER_FIT_ERROR_DS.data_vars
+}
+encoding.update(
+    {name: {"_FillValue": None} for name in CROSS_TOWER_FIT_ERROR_DS.coords}
+)
 CROSS_TOWER_FIT_ERROR_DS.to_netcdf(
     "ameriflux-minus-casa-autocorrelation-function-multi-tower-fits"
     "-300splits-run2.nc4",
-    format="NETCDF4", encoding=encoding
+    format="NETCDF4",
+    encoding=encoding,
 )
 _LOGGER.info("Saved output")

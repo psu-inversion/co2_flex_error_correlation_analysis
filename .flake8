@@ -1,2 +1,13 @@
 [flake8]
-ignore = Q000,W504
+extend_select = B,D
+extend_ignore = Q000,W504,E203,W503
+max-line-length = 88
+exclude =
+    .git
+    __pycache__
+    build
+    dist
+per_file_ignores =
+    correlation_function_fits.py:T001,E266
+max_complexity = 10
+doctests = True

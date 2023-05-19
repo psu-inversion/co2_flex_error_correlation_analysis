@@ -3,13 +3,14 @@
 """Read in and plot the AmeriFlux data.
 """
 import argparse
-import os.path
 import glob
+import os.path
 import re
 
-import numpy as np
 import cycler
 import matplotlib as mpl
+import numpy as np
+
 mpl.interactive(True)
 mpl.use("TkAgg")
 import matplotlib.pyplot as plt
@@ -47,22 +48,20 @@ def parse_file(ameriflux_file):
     """
     site_name = os.path.basename(os.path.dirname(ameriflux_file))
     year_match = re.search(r"\d{4}_", ameriflux_file)
-    year = ameriflux_file[year_match.start():year_match.end() - 1]
+    year = ameriflux_file[year_match.start() : year_match.end() - 1]
     year_start = np.datetime64("{year:s}-01-01T00:00".format(year=year))
     ds = pd.read_csv(
-        ameriflux_file, index_col=["time"],
+        ameriflux_file,
+        index_col=["time"],
         parse_dates=dict(time=["DoY"]),
         date_parser=lambda doy: (
-            year_start + np.array(
-                np.round(float(doy) * MINUTES_PER_DAY),
-                dtype="m8[m]"
-            )
+            year_start + np.array(np.round(float(doy) * MINUTES_PER_DAY), dtype="m8[m]")
         ),
         na_values=[
             "-{nines:s}{dot:s}".format(nines="9" * n_nines, dot=dot)
             for n_nines in (3, 4, 5, 6)
             for dot in (".", "")
-        ]
+        ],
     )
     nee_ds = ds[[col for col in ds.columns if "NEE" in col]]
     nee_ds.columns = pd.MultiIndex.from_product([[site_name], nee_ds.columns])
@@ -73,15 +72,17 @@ if __name__ == "__main__":
     ARGS = PARSER.parse_args()
     TOWER_DATA = [
         pd.concat(
-            [parse_file(name)
-             for name in glob.glob(
-                os.path.join(ARGS.ameriflux_root, site_dir,
-                             "*_h.txt"))],
-            axis=0
+            [
+                parse_file(name)
+                for name in glob.glob(
+                    os.path.join(ARGS.ameriflux_root, site_dir, "*_h.txt")
+                )
+            ],
+            axis=0,
         )
         for site_dir in os.listdir(ARGS.ameriflux_root)
-        if os.path.isdir(os.path.join(ARGS.ameriflux_root, site_dir)) and
-        glob.glob(os.path.join(ARGS.ameriflux_root, site_dir, "*_h.txt"))
+        if os.path.isdir(os.path.join(ARGS.ameriflux_root, site_dir))
+        and glob.glob(os.path.join(ARGS.ameriflux_root, site_dir, "*_h.txt"))
     ]
 
     TOWER_DF = pd.concat(TOWER_DATA, axis=1)  # .loc["2005-01-01":, :]
@@ -99,9 +100,11 @@ if __name__ == "__main__":
     assert len(TOWER_NAMES) == 7 * 11
     month_colors = sns.husl_palette(MONTHS_PER_YEAR)
 
-    XR_DAILY_CYCLE_BY_MONTH = xarray.Dataset.from_dataframe(
-        DAILY_CYCLE_BY_MONTH.stack(0)
-    ).isel(level_2=slice(0, -2)).rename(level_2="site")
+    XR_DAILY_CYCLE_BY_MONTH = (
+        xarray.Dataset.from_dataframe(DAILY_CYCLE_BY_MONTH.stack(0))
+        .isel(level_2=slice(0, -2))
+        .rename(level_2="site")
+    )
     XR_MISSING_DAILY_CYCLE = XR_DAILY_CYCLE_BY_MONTH.isnull().all(("month", "hour"))
 
     DEFAULT_PROP_CYCLE = mpl.rcParams["axes.prop_cycle"]
@@ -113,13 +116,12 @@ if __name__ == "__main__":
         #     data = DAILY_CYCLE_BY_MONTH.loc[:, (tower_name, var_name)].unstack(0)
         #     data.plot(ax=ax, subplots=False, colors=month_colors)
         #     ax.set_title(tower_name)
-        grid = XR_DAILY_CYCLE_BY_MONTH[var_name].sel(
-            site=~XR_MISSING_DAILY_CYCLE[var_name]
-        ).plot.line(
-            x="hour", hue="month", col="site", col_wrap=11
+        grid = (
+            XR_DAILY_CYCLE_BY_MONTH[var_name]
+            .sel(site=~XR_MISSING_DAILY_CYCLE[var_name])
+            .plot.line(x="hour", hue="month", col="site", col_wrap=11)
         )
-        plt.pause(.1)
+        plt.pause(0.1)
         grid.fig.savefig(
-            "{var_name:s}_daily_cycles_by_season.png".format(
-                var_name=var_name)
+            "{var_name:s}_daily_cycles_by_season.png".format(var_name=var_name)
         )

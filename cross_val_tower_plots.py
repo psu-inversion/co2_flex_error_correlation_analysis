@@ -5,30 +5,27 @@ from __future__ import division, print_function, unicode_literals
 import datetime
 import itertools
 
-import numpy as np
-import scipy.optimize
 import matplotlib.pyplot as plt
+import numpy as np
 import pandas as pd
 import pint
-import xarray
-
+import scipy.optimize
 import statsmodels.formula.api as smf
+import xarray
 from statsmodels.stats.api import anova_lm
 
 import flux_correlation_function_fits
-from correlation_utils import get_autocorrelation_stats
-
 from correlation_function_fits import (
-    CorrelationPart, PartForm,
-    is_valid_combination,
+    CorrelationPart,
+    PartForm,
     get_full_parameter_list,
+    is_valid_combination,
 )
+from correlation_utils import get_autocorrelation_stats
 
 CORRELATION_PARTS_LIST = [
     (day_part, dm_part, ann_part)
-    for day_part, dm_part, ann_part in itertools.product(
-        PartForm, PartForm, PartForm
-    )
+    for day_part, dm_part, ann_part in itertools.product(PartForm, PartForm, PartForm)
     if is_valid_combination(day_part, dm_part, ann_part)
 ]
 
@@ -66,27 +63,27 @@ SORT_KEYS = {
     "alphabetical": lambda site: site,
     "vegetation": lambda site: (
         AMERIFLUX_MINUS_CASA_DATA["Vegetation"].sel(site=site).values[()],
-        site
+        site,
     ),
     "climate class": lambda site: (
         AMERIFLUX_MINUS_CASA_DATA["Climate_Cl"].sel(site=site).values[()],
-        site
+        site,
     ),
     "latitude": lambda site: (
         AMERIFLUX_MINUS_CASA_DATA["Latitude"].sel(site=site).values[()],
-        site
+        site,
     ),
     "longitude": lambda site: (
         AMERIFLUX_MINUS_CASA_DATA["Longitude"].sel(site=site).values[()],
-        site
+        site,
     ),
     "mean temp": lambda site: (
         AMERIFLUX_MINUS_CASA_DATA["Mean_Temp"].sel(site=site).values[()],
-        site
+        site,
     ),
     "mean precip": lambda site: (
         AMERIFLUX_MINUS_CASA_DATA["Mean_Preci"].sel(site=site).values[()],
-        site
+        site,
     ),
 }
 
@@ -106,30 +103,25 @@ NORMALIZATIONS = {
 }
 
 
-
 ############################################################
 # Create the plots for each sort order and normalization
 for norm_name, norm_val in NORMALIZATIONS.items():
     normalized = CROSS_TOWER_FIT_ERROR_DS["cross_validation_error"] / norm_val
     min_err = max(
         normalized.where(
-            normalized.coords["training_tower"] !=
-            normalized.coords["validation_tower"]
+            normalized.coords["training_tower"] != normalized.coords["validation_tower"]
         ).min(),
-        0
+        0,
     )
     max_err = normalized.where(
-        normalized.coords["training_tower"] !=
-        normalized.coords["validation_tower"]
+        normalized.coords["training_tower"] != normalized.coords["validation_tower"]
     ).quantile(0.95)
     for sort_name, sort_key in SORT_KEYS.items():
         sorted_towers = sorted(normalized.coords["training_tower"].values, key=sort_key)
         fig, axes = plt.subplots(9, 6, sharex=True, sharey=True, figsize=(7.5, 9))
         for ax in axes.flat:
             ax.set_visible(False)
-        for corr_fun, ax in zip(
-                normalized.coords["correlation_function"], axes.flat
-        ):
+        for corr_fun, ax in zip(normalized.coords["correlation_function"], axes.flat):
             ax.set_visible(True)
             image = ax.imshow(
                 normalized.sel(
@@ -137,41 +129,51 @@ for norm_name, norm_val in NORMALIZATIONS.items():
                     training_tower=sorted_towers,
                     validation_tower=sorted_towers,
                 ),
-                vmin=min_err, vmax=max_err
+                vmin=min_err,
+                vmax=max_err,
             )
             ax.set_title(corr_fun.coords["correlation_function_short_name"].values)
         fig.subplots_adjust(hspace=0.4)
         cbar = fig.colorbar(
-            image, ax=axes[-1, -2:], orientation="horizontal", extend="both",
-            fraction=1
+            image, ax=axes[-1, -2:], orientation="horizontal", extend="both", fraction=1
         )
         cbar.set_label(
             "Cross-Validation Error{normalization:s}\n"
             "Sort order: {name:s}".format(
                 name=sort_name,
                 normalization=(
-                    " over {0:s}".format(norm_name)
-                    if norm_name != "one" else ""
-                )
+                    " over {0:s}".format(norm_name) if norm_name != "one" else ""
+                ),
             )
         )
         fig.savefig(
-            "tower-cross-validation-mismatch-over-{normalization:s}-sort-{name:s}.png"
-            .format(
+            "tower-cross-validation-mismatch-over-{normalization:s}-sort-{name:s}.png".format(
                 name=sort_name.replace(" ", "-"),
                 normalization=norm_name.replace(" ", "-"),
             )
         )
         plt.close(fig)
-        out_of_sample = normalized.where(
-            normalized.coords["training_tower"] != normalized.coords["validation_tower"]
-        ).to_dataframe().dropna()
+        out_of_sample = (
+            normalized.where(
+                normalized.coords["training_tower"]
+                != normalized.coords["validation_tower"]
+            )
+            .to_dataframe()
+            .dropna()
+        )
         for_regression = out_of_sample.replace(
-            {"3-term cosine series": "Cos", "Exponential sine-squared": "Per",
-             "Geostatistical": "Geo"}
+            {
+                "3-term cosine series": "Cos",
+                "Exponential sine-squared": "Per",
+                "Geostatistical": "Geo",
+            }
         ).rename(
-            dict(daily_cycle="day", annual_cycle="ann", annual_modulation_of_daily_cycle="day_mod"),
-            axis=1
+            dict(
+                daily_cycle="day",
+                annual_cycle="ann",
+                annual_modulation_of_daily_cycle="day_mod",
+            ),
+            axis=1,
         )
         # formula = "cross_validation_error ~ has_daily_cycle + has_annual_cycle + (daily_cycle + annual_cycle + annual_modulation_of_daily_cycle) ** 2"
         # model = smf.ols(formula,  out_of_sample)
