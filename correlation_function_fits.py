@@ -306,7 +306,7 @@ def get_full_expression(part_daily, part_day_mod, part_annual):
     return (
         "{0:s} * {1:s} + {2:s} + "
         "resid_coef * exp(-tdata / (resid_timescale * DAYS_PER_FORTNIGHT)) + "
-        "ec_coef * exp(-tdata / ec_timescale * HOURS_PER_DAY)"
+        "ec_coef * where(tdata == 0, 1, 0)"
     ).format(
         part_daily.get_expression(CorrelationPart.DAILY),
         part_day_mod.get_expression(CorrelationPart.DAILY_MODULATION),
@@ -335,7 +335,7 @@ def get_full_parameter_list(part_daily, part_day_mod, part_annual):
         )
         for param in form.get_parameters(time)
     ]
-    result.extend(["resid_coef", "resid_timescale", "ec_coef", "ec_timescale"])
+    result.extend(["resid_coef", "resid_timescale", "ec_coef"])
     return result
 
 def get_weighted_fit_expression(part_daily, part_day_mod, part_annual):

@@ -196,7 +196,6 @@ def {function_name:s}_fit_loop(
     cdef float_fun sin = cysin
 
     resid_timescale *= DAYS_PER_FORTNIGHT
-    ec_timescale /= HOURS_PER_DAY
 
     for j in range(n_parameters):
         deriv[j] = 0.0
@@ -218,22 +217,20 @@ def {function_name:s}_fit_loop(
         if resid_timescale > 0:
             resid_corr = resid_coef * exp(-tdata / resid_timescale)
             here_corr += resid_corr
-            here_deriv[n_parameters - 4] = exp(-tdata / resid_timescale)
-            here_deriv[n_parameters - 3] = resid_corr * tdata / resid_timescale ** 2
+            here_deriv[n_parameters - 3] = exp(-tdata / resid_timescale)
+            here_deriv[n_parameters - 2] = resid_corr * tdata / resid_timescale ** 2
 
-        if ec_timescale > 0:
-            ec_corr = ec_coef * exp(-tdata / ec_timescale)
+        if tdata == 0:
+            ec_corr = ec_coef
             here_corr += ec_corr
-            here_deriv[n_parameters - 2] = exp(-tdata / ec_timescale)
-            here_deriv[n_parameters - 1] = ec_corr * tdata / ec_timescale ** 2
+            here_deriv[n_parameters - 1] = 1
 
         weighted_fit += pair_count[i] * (here_corr - empirical_correlogram[i]) ** 2
         deriv_common = pair_count[i] * 2 * (here_corr - empirical_correlogram[i])
         for j in range(n_parameters):
             deriv[j] += deriv_common * here_deriv[j]
 
-    deriv[n_parameters - 3] *= DAYS_PER_FORTNIGHT
-    deriv[n_parameters - 1] /= HOURS_PER_DAY
+    deriv[n_parameters - 2] *= DAYS_PER_FORTNIGHT
 
     return weighted_fit, np.asarray(<floating_type[:n_parameters]>deriv).astype(np.float64)
 """.format(
@@ -321,7 +318,6 @@ def {function_name:s}_curve_loop(
     cdef float_fun sin = cysin
 
     resid_timescale *= DAYS_PER_FORTNIGHT
-    ec_timescale /= HOURS_PER_DAY
 
     for i in range(n_times):
         tdata = tdata_base[i]
@@ -340,14 +336,13 @@ def {function_name:s}_curve_loop(
         if resid_timescale > 0:
             resid_corr = resid_coef * exp(-tdata / resid_timescale)
             here_corr += resid_corr
-            deriv[i, n_parameters - 4] = exp(-tdata / resid_timescale)
-            deriv[i, n_parameters - 3] = resid_corr * tdata / resid_timescale ** 2 * DAYS_PER_FORTNIGHT
+            deriv[i, n_parameters - 3] = exp(-tdata / resid_timescale)
+            deriv[i, n_parameters - 2] = resid_corr * tdata / resid_timescale ** 2 * DAYS_PER_FORTNIGHT
 
-        if ec_timescale > 0:
-            ec_corr = ec_coef * exp(-tdata / ec_timescale)
+        if tdata == 0:
+            ec_corr = ec_coef
             here_corr += ec_corr
-            deriv[i, n_parameters - 2] = exp(-tdata / ec_timescale)
-            deriv[i, n_parameters - 1] = ec_corr * tdata / ec_timescale ** 2 / HOURS_PER_DAY
+            deriv[i, n_parameters - 1] = 1
 
         curve[i] = here_corr
 
