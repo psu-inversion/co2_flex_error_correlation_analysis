@@ -164,10 +164,17 @@ class PartForm(Enum):
                 "exp(-(sin(PI_OVER_{time:s} * tdata) / {0:s}_width) ** 2)"
             )
         elif self == PartForm.GEOSTAT:
+            if part == CorrelationPart.DAILY:
+                # Three hours
+                cutoff_one = 1./8
+            else:
+                # One month
+                cutoff_one = 1./12
+            cutoff_two = 1 - cutoff_one
             main = (
-                "where(((tdata / DAYS_PER_{time:s}) % 1) < 0.125, 1 - 8 * ((tdata / DAYS_PER_{time:s}) % 1), "
-                "where(((tdata / DAYS_PER_{time:s}) % 1) > 0.875, 8 * ((tdata / DAYS_PER_{time:s}) % 1 - 0.875), 0))"
-            )
+                "where(((tdata / DAYS_PER_{{time:s}}) % 1) < {cutoff_one:f}, 1 - 8 * ((tdata / DAYS_PER_{{time:s}}) % 1), "
+                "where(((tdata / DAYS_PER_{{time:s}}) % 1) > {cutoff_two:f}, 8 * ((tdata / DAYS_PER_{{time:s}}) % 1 - {cutoff_two:f}), 0))"
+            ).format(cutoff_one=cutoff_one, cutoff_two=cutoff_two)
 
         if not part.is_modulation():
             # The exponential die-off is only for the main
