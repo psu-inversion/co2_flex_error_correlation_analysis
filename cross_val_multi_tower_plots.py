@@ -3,8 +3,8 @@ from __future__ import print_function
 
 import collections
 
-import numpy as np
 import matplotlib as mpl
+
 mpl.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
@@ -85,87 +85,132 @@ def long_description(df, ci_width=0.95):
 
 ############################################################
 # Read in and merge datasets
-# ds1 = xarray.open_dataset(
-#     "ameriflux-minus-casa-autocorrelation-function-multi-tower-fits-200splits-run1.nc4"
-# )
-# ds2 = xarray.open_dataset(
-#     "ameriflux-minus-casa-autocorrelation-function-multi-tower-fits-250splits-run1.nc4"
-# )
-# ds = xarray.concat(
-#     [
-#         ds1.assign_coords(
-#             splits=pd.RangeIndex(0, ds1.dims["splits"])
-#         ),
-#         ds2.assign_coords(
-#             splits=pd.RangeIndex(ds1.dims["splits"], ds1.dims["splits"] + ds2.dims["splits"])
-#         ),
-#     ],
-#     dim="splits",
-# )
+DATA_NEEDS_MERGING = True
+if DATA_NEEDS_MERGING:
+    # ds1 = xarray.open_dataset(
+    #     "ameriflux-minus-casa-autocorrelation-function-multi-tower-fits-200splits-run1.nc4"
+    # )
+    # ds2 = xarray.open_dataset(
+    #     "ameriflux-minus-casa-autocorrelation-function-multi-tower-fits-250splits-run1.nc4"
+    # )
+    # ds = xarray.concat(
+    #     [
+    #         ds1.assign_coords(
+    #             splits=pd.RangeIndex(0, ds1.dims["splits"])
+    #         ),
+    #         ds2.assign_coords(
+    #             splits=pd.RangeIndex(
+    #                 ds1.dims["splits"], ds1.dims["splits"] + ds2.dims["splits"]
+    #             )
+    #         ),
+    #     ],
+    #     dim="splits",
+    # )
 
-# # Fill in the training towers
-# ALL_TOWERS = np.unique(ds["validation_towers"].values.astype("U6").flat)
-# ds["training_towers"] = (
-#     ("splits", "n_training"),
-#     np.array([
-#         np.setdiff1d(ALL_TOWERS, val_towers)
-#         for val_towers in ds["validation_towers"].values.astype("U6")
-#     ])
-# )
-# del ds1, ds2
+    # # Fill in the training towers
+    # ALL_TOWERS = np.unique(ds["validation_towers"].values.astype("U6").flat)
+    # ds["training_towers"] = (
+    #     ("splits", "n_training"),
+    #     np.array([
+    #         np.setdiff1d(ALL_TOWERS, val_towers)
+    #         for val_towers in ds["validation_towers"].values.astype("U6")
+    #     ])
+    # )
+    # del ds1, ds2
 
-# ds3 = xarray.open_dataset(
-#     "ameriflux-minus-casa-autocorrelation-function-multi-tower-fits-300splits-run1.nc4"
-# )
-# ds4 = xarray.open_dataset(
-#     "ameriflux-minus-casa-autocorrelation-function-multi-tower-fits-300splits-run2.nc4"
-# )
-# ds = xarray.concat(
-#     [
-#         ds,
-#         ds3.assign_coords(
-#             splits=pd.RangeIndex(
-#                 ds.dims["splits"],
-#                 ds.dims["splits"] + ds3.dims["splits"]
-#             )
-#         ),
-#         ds4.assign_coords(
-#             splits=pd.RangeIndex(
-#                 ds.dims["splits"] + ds3.dims["splits"],
-#                 ds.dims["splits"] + ds3.dims["splits"] + ds4.dims["splits"],
-#             )
-#         )
-#     ],
-#     dim="splits",
-# )
-# del ds3, ds4
+    # ds3 = xarray.open_dataset(
+    #     "ameriflux-minus-casa-autocorrelation-function-multi-tower-fits-300splits-run1.nc4"
+    # )
+    # ds4 = xarray.open_dataset(
+    #     "ameriflux-minus-casa-autocorrelation-function-multi-tower-fits-300splits-run2.nc4"
+    # )
+    # ds = xarray.concat(
+    #     [
+    #         ds,
+    #         ds3.assign_coords(
+    #             splits=pd.RangeIndex(
+    #                 ds.dims["splits"],
+    #                 ds.dims["splits"] + ds3.dims["splits"]
+    #             )
+    #         ),
+    #         ds4.assign_coords(
+    #             splits=pd.RangeIndex(
+    #                 ds.dims["splits"] + ds3.dims["splits"],
+    #                 ds.dims["splits"] + ds3.dims["splits"] + ds4.dims["splits"],
+    #             )
+    #         )
+    #     ],
+    #     dim="splits",
+    # )
+    # del ds3, ds4
 
-# ds.coords["n_parameters"] = ds["optimized_parameters"].isel(splits=0).count(
-#     "parameter_name"
-# ).drop_vars("splits").astype("i1")
+    import glob
 
-# encoding = {
-#     var_name: {"zlib": True, "_FillValue": -9.999e9}
-#     for var_name in ds.data_vars
-# }
-# encoding.update({coord_name: {"_FillValue": None} for coord_name in ds.coords})
-# ds.to_netcdf("multi-tower-cross-validation-error-data-1050-splits.nc4",
-#              encoding=encoding, format="NETCDF4_CLASSIC")
-ds = xarray.open_dataset("multi-tower-cross-validation-error-data-1050-splits.nc4")
+    data_files = glob.glob(
+        "ameriflux-minus-casa-autocorrelation-function-"
+        "multi-tower-fits-*splits-run*.nc4"
+    )
+    datasets = [xarray.open_dataset(name) for name in data_files]
+    nsplits = [ds.dims["splits"] for ds in datasets]
+    start_offsets = np.concatenate([[0], np.cumsum(nsplits)])
+    ds = xarray.concat(
+        [
+            here_ds.assign_coords(
+                splits=pd.RangeIndex(
+                    start_offset, start_offset + here_ds.dims["splits"]
+                )
+            )
+            for start_offset, here_ds in zip(start_offsets, datasets)
+        ],
+        dim="splits",
+    )
+    TOTAL_N_SPLITS = start_offsets[-1]
+    del data_files, datasets, nsplits, start_offsets
+
+    ds.coords["n_parameters"] = (
+        ds["optimized_parameters"]
+        .isel(splits=0)
+        .count("parameter_name")
+        .drop_vars("splits")
+        .astype("i1")
+    )
+
+    encoding = {
+        var_name: {"zlib": True, "_FillValue": -9.999e9} for var_name in ds.data_vars
+    }
+    encoding.update({coord_name: {"_FillValue": None} for coord_name in ds.coords})
+    ds.to_netcdf(
+        "multi-tower-cross-validation-error-data-{:d}-splits.nc4".format(
+            TOTAL_N_SPLITS
+        ),
+        encoding=encoding,
+        format="NETCDF4_CLASSIC",
+    )
+else:
+    TOTAL_N_SPLITS = 1000
+    ds = xarray.open_dataset(
+        "multi-tower-cross-validation-error-data-{:d}-splits.nc4".format(TOTAL_N_SPLITS)
+    )
 
 ############################################################
 # Turn dataset into dataframe
-df = ds["cross_validation_error"].to_dataframe().replace({
-    "Geostatistical": "Decoupled",
-    "Exponential sine-squared": "Exp. sin\N{SUPERSCRIPT TWO}",
-    "3-term cosine series": "Cosines"
-})
+df = (
+    ds["cross_validation_error"]
+    .to_dataframe()
+    .replace(
+        {
+            "Geostatistical": "Decoupled",
+            "Exponential sine-squared": "Exp. sin\N{SUPERSCRIPT TWO}",
+            "3-term cosine series": "Cosines",
+        }
+    )
+)
 
 for slot_var in ("daily_cycle", "annual_cycle", "annual_modulation_of_daily_cycle"):
     df[slot_var] = pd.Categorical(
         df[slot_var],
         categories=["None", "Decoupled", "Exp. sin\N{SUPERSCRIPT TWO}", "Cosines"],
-        ordered=True
+        ordered=True,
     )
 
 slot_forms_dtype = df[slot_var].dtype
@@ -226,10 +271,10 @@ for i in range(3 + 1):
         for i, col in enumerate(full_X.columns)
         if (
             (
-                ":daily_cycle[T.Decoupled]" not in col and
-                not col.startswith("daily_cycle[T.Decoupled]:")
-            ) or
-            "annual_modulation_of_daily_cycle" not in col
+                ":daily_cycle[T.Decoupled]" not in col
+                and not col.startswith("daily_cycle[T.Decoupled]:")
+            )
+            or "annual_modulation_of_daily_cycle" not in col
         )
     ]
     reduced_X = full_X.iloc[:, col_index_to_keep]
@@ -262,7 +307,7 @@ grid = sns.catplot(
     row="Daily Cycle",
     col="Annual Cycle",
     data=df_for_plot,
-    height=1.7,
+    height=1.8,
     aspect=1.7,
     margin_titles=True,
     kind="box",
@@ -293,7 +338,7 @@ grid.fig.savefig("multi-tower-cross-validation-error-by-function.png", bbox_inch
 
 for ax in grid.axes.flat:
     ax.set_xscale("log")
-    ax.set_xlim(0.08e9, 4e9)
+    ax.set_xlim(0.04e9, 3e9)
 
 grid.fig.savefig("multi-tower-log-cross-validation-error-by-function.pdf", bbox_inches="tight")
 grid.fig.savefig("multi-tower-log-cross-validation-error-by-function.png", bbox_inches="tight")
@@ -301,7 +346,7 @@ grid.fig.savefig("multi-tower-log-cross-validation-error-by-function.png", bbox_
 ############################################################
 # Draw boxplots showing details of distribution for best functions
 low_cv_err = (
-    df_for_plot["cross_validation_error"].groupby("correlation_function").mean() < 3e8
+    df_for_plot["cross_validation_error"].groupby("correlation_function").mean() < 2e8
 )
 df_for_best_plot = df_for_plot.loc[
     (low_cv_err.index[low_cv_err.values], slice(None)), :
@@ -318,7 +363,7 @@ grid = sns.catplot(
     row="Daily Cycle",
     col="Annual Cycle",
     data=df_for_best_plot,
-    height=1.7,
+    height=2.2,
     aspect=1.7,
     margin_titles=True,
     kind="box",
@@ -349,7 +394,7 @@ grid.fig.savefig("multi-tower-cross-validation-best-error-by-function.png", bbox
 
 for ax in grid.axes.flat:
     ax.set_xscale("log")
-    ax.set_xlim(0.08e9, 4e9)
+    ax.set_xlim(0.04e9, 3e9)
 
 grid.fig.savefig("multi-tower-log-cross-validation-best-error-by-function.pdf", bbox_inches="tight")
 grid.fig.savefig("multi-tower-log-cross-validation-best-error-by-function.png", bbox_inches="tight")
@@ -421,13 +466,16 @@ grid = sns.catplot(
     aspect=0.5,
 )
 grid.fig.autofmt_xdate()
-grid.axes[0, 0].set_ylabel("Mean Cross-Validation Error\n(unitless; log scale; lower is better)")
+grid.axes[0, 0].set_ylabel(
+    "Mean Cross-Validation Error\n(unitless; log scale; lower is better)"
+)
 grid.set_titles(
     row_template="{row_var: ^11s}\n{row_name: ^11s}",
     col_template="{col_var: ^11s}\n{col_name: ^11s}",
 )
 for ax in grid.axes[0, :]:
     ylim = grid.axes[0, 0].get_ylim()
+    # ax.set_ylim(ylim)
 
 grid.fig.savefig("multi-tower-cross-validation-log-error-anova-variations.pdf", bbox_inches="tight")
 grid.fig.savefig("multi-tower-cross-validation-log-error-anova-variations.png", bbox_inches="tight")
@@ -444,7 +492,7 @@ grid = sns.catplot(
     # facet_kws={"subplot_kws": {"yscale": "log"}},
     capsize=0.4,
     height=4.1,
-    aspect=0.5,
+    aspect=0.6,
 )
 grid.fig.autofmt_xdate()
 grid.axes[0, 0].set_ylabel("Mean Cross-Validation Error\n(unitless; lower is better)")
@@ -454,6 +502,7 @@ grid.set_titles(
 )
 for ax in grid.axes[0, :]:
     ylim = grid.axes[0, 0].get_ylim()
+    # ax.set_ylim(ylim)
 
 grid.fig.savefig("multi-tower-cross-validation-best-error-anova-variations.pdf", bbox_inches="tight")
 grid.fig.savefig("multi-tower-cross-validation-best-error-anova-variations.png", bbox_inches="tight")
@@ -480,19 +529,16 @@ ldesc.loc["n_parameters", :] = (
 
 ############################################################
 # Plot cross-validation error as a function of complexity
-fig = plt.figure(figsize=(4.5, 3.5))
+mean_error_by_parameters = ldesc.loc[["n_parameters", "mean"], :].T.groupby(
+    "n_parameters"
+).min()
+fig = plt.figure(figsize=(4.5, 3.5), constrained_layout=True)
 ax = sns.scatterplot(x="n_parameters", y="mean", data=ldesc.T, x_jitter=True, alpha=0.6)
 ax.plot(
     "n_parameters",
     "mean",
     "ko",
-    data=ldesc.loc[["n_parameters", "mean"], :]
-    .T.groupby("n_parameters")
-    .min()
-    .reset_index(),
-)
-mean_error_by_parameters = ldesc.loc[["n_parameters", "mean"], :].T.set_index(
-    "n_parameters"
+    data=mean_error_by_parameters.reset_index(),
 )
 ax.plot(mean_error_by_parameters.idxmin(), mean_error_by_parameters.min(), "ro")
 ax.set_ylabel("Mean Cross-Validation Error\n(unitless; lower is better)")
@@ -514,7 +560,7 @@ ldesc_ds["n_parameters"] = ldesc_ds["n_parameters"].astype("i1")
 encoding = {name: {"_FillValue": None} for name in ldesc_ds.coords}
 encoding.update({name: {"_FillValue": None} for name in ldesc_ds.data_vars})
 ldesc_ds.to_netcdf(
-    "multi-tower-cross-validation-error-summary-1050-splits.nc4",
+    "multi-tower-cross-validation-error-summary-{:d}-splits.nc4".format(TOTAL_N_SPLITS),
     encoding=encoding,
     format="NETCDF4_CLASSIC",
 )
@@ -522,18 +568,27 @@ ldesc_ds.to_netcdf(
 ############################################################
 # Plot variation in parameter values
 parameter_variation_df = (
-   ds["optimized_parameters"].reduce(scipy.stats.iqr, dim="splits", nan_policy="omit") /
-    np.abs(ds["optimized_parameters"].median("splits"))
-).to_dataframe().replace({
-    "Geostatistical": "Decoupled",
-    "Exponential sine-squared": "Exp. sin\N{SUPERSCRIPT TWO}",
-    "3-term cosine series": "Cosines"
-}).rename(
-    columns={
-        "annual_modulation_of_daily_cycle": "Annual Modulation\nof Daily Cycle",
-        "annual_cycle": "Annual Cycle",
-        "daily_cycle": "Daily Cycle"
-    }
+    (
+        ds["optimized_parameters"].reduce(
+            scipy.stats.iqr, dim="splits", nan_policy="omit"
+        )
+        / np.abs(ds["optimized_parameters"].median("splits"))
+    )
+    .to_dataframe()
+    .replace(
+        {
+            "Geostatistical": "Decoupled",
+            "Exponential sine-squared": "Exp. sin\N{SUPERSCRIPT TWO}",
+            "3-term cosine series": "Cosines",
+        }
+    )
+    .rename(
+        columns={
+            "annual_modulation_of_daily_cycle": "Annual Modulation\nof Daily Cycle",
+            "annual_cycle": "Annual Cycle",
+            "daily_cycle": "Daily Cycle",
+        }
+    )
 )
 
 parameter_variation_df[
@@ -569,4 +624,66 @@ grid.axes[0, 0].set_ylabel(
 grid.fig.subplots_adjust(top=0.85, left=0.1)
 grid.fig.savefig("multi-tower-cross-validation-coefficient-variation.pdf")
 
+############################################################
+# Create the parameter table LaTeX
+# There's some rearranging of columns after
+ds_mean = ds.mean("splits")
+ds_top = ds_mean.sel(correlation_function=ds_mean["cross_validation_error"] < 2e8).sortby("cross_validation_error")
+
+parameter_table = ds_top["optimized_parameters"].set_index(
+    correlation_function="correlation_function_short_name"
+).to_series().unstack(1).round(3)
+
+for col_name in ("daily_timescale", "resid_timescale"):
+    # Convert fortnights to weeks
+    parameter_table[col_name] = parameter_table[col_name] * 2
+# Convert decades to years
+parameter_table["ann_timescale"] = parameter_table["ann_timescale"] * 10
+
+for col_name in ("cross_validation_error", "daily_cycle", "annual_modulation_of_daily_cycle", "annual_cycle"):
+    parameter_table[col_name] = ds_top[col_name].set_index(correlation_function="correlation_function_short_name").to_series()
+    if col_name == "cross_validation_error":
+        parameter_table[col_name] = parameter_table[col_name].round(-5) / 1e8
+    else:
+        parameter_table[col_name] = parameter_table[col_name].replace(
+            {
+                "Geostatistical": "Decoupled",
+                "Exponential sine-squared": "Exp. sin\N{SUPERSCRIPT TWO}",
+                "3-term cosine series": "Cosines",
+            }
+        )
+
+
+def index_key(index):
+    values = index.values.astype("U")
+    split = np.array(
+        np.char.split(parameter_table.columns.values.astype("U"), "_", 1).tolist(),
+        dtype="U"
+    )
+    slot_ordering = ("annual", "daily", "dm", "ann", "resid", "ec", "cross")
+    first_part = [slot_ordering.index(first) for first in split[:, 0]]
+    coef_list = ("coef", "timescale", "coef1", "coef2", "width")
+    second_part = [
+        coef_list.index(second) if second in coef_list else 99 for second in split[:, 1]
+    ]
+    return pd.Index(
+        [first * 100 + second for first, second in zip(first_part, second_part)]
+    )
+
+
+parameter_table.sort_index(axis=1, key=index_key).set_index(
+    ["daily_cycle", "annual_modulation_of_daily_cycle", "annual_cycle"]
+).rename(
+    {"daily_coef": "$C_d$", "daily_timescale": "$T_d$",
+     "daily_coef1": "$b_{1d}$", "daily_coef2": "$b_{2d}$", "daily_width": "$w_d$",
+     "dm_coef1": "$b_{1dm}$", "dm_coef2": "$b_{2dm}$", "dm_width": "$w_{dm}$",
+     "ann_coef": "$C_a$", "ann_timescale": "$T_a$",
+     "ann_coef1": "$b_{1a}$", "ann_coef2": "$b_{2a}$", "ann_width": "$w_a$",
+     "resid_coef": "$C_o$", "resid_timescale": "$T_o$",
+     "ec_coef": "$C_{ec}$", "ec_timescale": "$T_{ec}$"},
+    axis=1
+).to_latex("parameter_table.tex", na_rep="{---}")
+
+############################################################
+# Render figures
 plt.pause(1)

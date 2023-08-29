@@ -91,10 +91,12 @@ assert list(CorrelationPart) == [
 ]
 
 
+
 class PartForm(Enum):
     """Describe one part of a correlation function."""
 
     O = "None"
+    D = "Decoupled"
     C = "3-term cosine series"
     P = "Exponential sine-squared"
 
@@ -103,7 +105,6 @@ class PartForm(Enum):
     PERIODIC = P
     EXPSIN2 = P
 
-    D = "Decoupled"
     DECOUPLED = D
     G = D
     GEOSTAT = G
@@ -166,12 +167,21 @@ class PartForm(Enum):
         elif self == PartForm.PERIODIC:
             main = "exp(-(sin(PI_OVER_{time:s} * tdata) / {0:s}_width) ** 2)"
         elif self == PartForm.GEOSTAT:
+            if part == CorrelationPart.DAILY:
+                # Three hours
+                cutoff_one = 1./8
+            else:
+                # One month
+                cutoff_one = 1./12
+            cutoff_two = 1 - cutoff_one
+            slope = 1/cutoff_one
             main = (
-                "where(((tdata / DAYS_PER_{time:s}) % 1) < 0.125, "
-                "1 - 8 * ((tdata / DAYS_PER_{time:s}) % 1), "
-                "where(((tdata / DAYS_PER_{time:s}) % 1) > 0.875, "
-                "8 * ((tdata / DAYS_PER_{time:s}) % 1 - 0.875), 0))"
-            )
+                "where(((tdata / DAYS_PER_{{time:s}}) % 1) < {cutoff_one:f},"
+                " 1 - {slope:.1f} * ((tdata / DAYS_PER_{{time:s}}) % 1),"
+                " where(((tdata / DAYS_PER_{{time:s}}) % 1) > {cutoff_two:f},"
+                "  {slope:.1f} * ((tdata / DAYS_PER_{{time:s}}) % 1 - {cutoff_two:f}),"
+                "  0))"
+            ).format(cutoff_one=cutoff_one, cutoff_two=cutoff_two, slope=slope)
 
         if not part.is_modulation():
             # The exponential die-off is only for the main
@@ -310,7 +320,7 @@ def get_full_expression(part_daily, part_day_mod, part_annual):
     return (
         "{0:s} * {1:s} + {2:s} + "
         "resid_coef * exp(-tdata / (resid_timescale * DAYS_PER_FORTNIGHT)) + "
-        "ec_coef * exp(-tdata / ec_timescale * HOURS_PER_DAY)"
+        "ec_coef * where(tdata == 0, 1, 0)"
     ).format(
         part_daily.get_expression(CorrelationPart.DAILY),
         part_day_mod.get_expression(CorrelationPart.DAILY_MODULATION),
@@ -343,7 +353,7 @@ def get_full_parameter_list(part_daily, part_day_mod, part_annual):
         )
         for param in form.get_parameters(time)
     ]
-    result.extend(["resid_coef", "resid_timescale", "ec_coef", "ec_timescale"])
+    result.extend(["resid_coef", "resid_timescale", "ec_coef"])
     return result
 
 

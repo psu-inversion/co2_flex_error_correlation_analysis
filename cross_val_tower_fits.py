@@ -11,21 +11,19 @@ from __future__ import division, print_function, unicode_literals
 import datetime
 import itertools
 import logging
+import os.path
 import random
 
+import flux_correlation_function_fits
 import numpy as np
 import pandas as pd
 import pint
 import scipy.optimize
 import xarray
 
-import flux_correlation_function_fits
-from correlation_function_fits import (
-    CorrelationPart,
-    PartForm,
-    get_full_parameter_list,
-    is_valid_combination,
-)
+from correlation_function_fits import (CorrelationPart, PartForm,
+                                       get_full_parameter_list,
+                                       is_valid_combination)
 from correlation_utils import get_autocorrelation_stats
 
 print(datetime.datetime.now())
@@ -44,16 +42,20 @@ DAYS_PER_YEAR = 365.2425
 DAYS_PER_DECADE = 10 * DAYS_PER_YEAR
 HOURS_PER_YEAR = HOURS_PER_DAY * DAYS_PER_YEAR
 
+UREG = pint.UnitRegistry()
+
+############################################################
+# Configuration
 N_YEARS_DATA = 4
 REQUIRED_DATA_FRAC = 0.8
 
-N_SPLITS = 300
+N_SPLITS = 350
 # There are 75 towers that fit my criteria
 N_TRAINING = 45
 N_HYPER_TRAIN = 30
 N_CROSS_VAL = 0  # or whatever's left
 
-UREG = pint.UnitRegistry()
+CALCULATE_AUTOCORRELATIONS = False
 
 # Configure logging
 logging.basicConfig(
@@ -160,7 +162,7 @@ STARTING_PARAMS = dict(
     daily_coef1=0.7,
     daily_coef2=0.3,
     daily_width=0.5,
-    daily_timescale=500,  # fortnights
+    daily_timescale=50,  # fortnights
     dm_width=0.8,
     dm_coef1=0.3,
     dm_coef2=+0.1,
@@ -172,7 +174,6 @@ STARTING_PARAMS = dict(
     resid_coef=0.03,
     resid_timescale=2.0,  # fortnights
     ec_coef=0.5,
-    ec_timescale=3.0,  # hours
 )
 PARAM_LOWER_BOUNDS = dict(
     daily_coef=-10,
@@ -191,14 +192,13 @@ PARAM_LOWER_BOUNDS = dict(
     resid_coef=-10,
     resid_timescale=0.0,  # fortnights
     ec_coef=-10,
-    ec_timescale=0.0,  # hours
 )
 PARAM_UPPER_BOUNDS = dict(
     daily_coef=10,
     daily_coef1=10,
     daily_coef2=10,
     daily_width=10,
-    daily_timescale=500,  # fortnights
+    daily_timescale=5000,  # fortnights
     dm_width=10,
     dm_coef1=10,
     dm_coef2=10,
@@ -206,11 +206,10 @@ PARAM_UPPER_BOUNDS = dict(
     ann_coef2=10,
     ann_coef=10,
     ann_width=10,
-    ann_timescale=4,  # decades
+    ann_timescale=40,  # decades
     resid_coef=10,
-    resid_timescale=500.0,  # fortnights
+    resid_timescale=5000.0,  # fortnights
     ec_coef=10,
-    ec_timescale=1000.0,  # hours
 )
 
 # Convert initial values and bounds to float32
@@ -226,7 +225,7 @@ for coef, val in PARAM_UPPER_BOUNDS.items():
 ############################################################
 # Read in data
 AMERIFLUX_MINUS_CASA_DATA = xarray.open_dataset(
-    "ameriflux-and-casa-matching-data-2.nc4",
+    "ameriflux-and-casa-matching-data.nc4",
     chunks={"site": 30},
 )
 
@@ -242,119 +241,112 @@ TIME_LAG_INDEX = pd.timedelta_range(
     start=0, freq="1H", periods=AMERIFLUX_MINUS_CASA_DATA.dims["time"]
 )
 
-# ############################################################
-# # Calculate the autocorrelation for each tower
-### Commented out because I already have this calculated and can just
-### read in the saved file.
-# AUTOCORRELATION_DATA = xarray.Dataset(
-#     {
-#         "flux_error_autocorrelation": (
-#             ("site", "time_lag"),
-#             np.empty(
-#                 (
-#                     AMERIFLUX_MINUS_CASA_DATA.dims["site"],
-#                     AMERIFLUX_MINUS_CASA_DATA.dims["time"],
-#                 ),
-#                 dtype=np.float32
-#             ),
-#             {
-#                 "long_name":
-#                 "ameriflux_minus_casa_surface_upward_carbon_dioxide_"
-#                 "flux_difference_autocorrelation",
-#                 "units": "1",
-#             },
-#         ),
-#         "flux_error_autocovariance": (
-#             ("site", "time_lag"),
-#             np.empty(
-#                 (
-#                     AMERIFLUX_MINUS_CASA_DATA.dims["site"],
-#                     AMERIFLUX_MINUS_CASA_DATA.dims["time"],
-#                 ),
-#                 dtype=np.float32
-#             ),
-#             {
-#                 "long_name":
-#                 "ameriflux_minus_casa_surface_upward_carbon_dioxide_"
-#                 "flux_difference_autocovariance",
-#                 "units": str(
-#                     UREG(
-#                         AMERIFLUX_MINUS_CASA_DATA[
-#                             "flux_difference"
-#                         ].attrs["units"]
-#                     ) ** 2
-#                 ),
-#             },
-#         ),
-#         "flux_error_n_pairs": (
-#             ("site", "time_lag"),
-#             np.empty(
-#                 (
-#                     AMERIFLUX_MINUS_CASA_DATA.dims["site"],
-#                     AMERIFLUX_MINUS_CASA_DATA.dims["time"],
-#                 ),
-#                 dtype=np.float32
-#             ),
-#             {
-#                 "long_name":
-#                 "ameriflux_minus_casa_surface_upward_carbon_dioxide_"
-#                 "flux_difference_number_of_pairs_at_lag",
-#                 "units": "1",
-#             },
-#         ),
-#     },
-#     {
-#         "site": (
-#             ("site",),
-#             AMERIFLUX_MINUS_CASA_DATA.coords["site"],
-#         ),
-#         "time_lag": (
-#             ("time_lag",),
-#             TIME_LAG_INDEX,
-#             {
-#                 "long_name": "time_difference",
-#             },
-#         )
-#     },
-# )
+############################################################
+# Calculate the autocorrelation for each tower
+if CALCULATE_AUTOCORRELATIONS:
+    AUTOCORRELATION_DATA = xarray.Dataset(
+        {
+            "flux_error_autocorrelation": (
+                ("site", "time_lag"),
+                np.empty(
+                    (
+                        AMERIFLUX_MINUS_CASA_DATA.dims["site"],
+                        AMERIFLUX_MINUS_CASA_DATA.dims["time"],
+                    ),
+                    dtype=np.float32,
+                ),
+                {
+                    "long_name": "ameriflux_minus_casa_surface_upward_carbon_dioxide_"
+                    "flux_difference_autocorrelation",
+                    "units": "1",
+                },
+            ),
+            "flux_error_autocovariance": (
+                ("site", "time_lag"),
+                np.empty(
+                    (
+                        AMERIFLUX_MINUS_CASA_DATA.dims["site"],
+                        AMERIFLUX_MINUS_CASA_DATA.dims["time"],
+                    ),
+                    dtype=np.float32,
+                ),
+                {
+                    "long_name": "ameriflux_minus_casa_surface_upward_carbon_dioxide_"
+                    "flux_difference_autocovariance",
+                    "units": str(
+                        UREG(
+                            AMERIFLUX_MINUS_CASA_DATA["flux_difference"].attrs["units"]
+                        )
+                        ** 2
+                    ),
+                },
+            ),
+            "flux_error_n_pairs": (
+                ("site", "time_lag"),
+                np.empty(
+                    (
+                        AMERIFLUX_MINUS_CASA_DATA.dims["site"],
+                        AMERIFLUX_MINUS_CASA_DATA.dims["time"],
+                    ),
+                    dtype=np.float32,
+                ),
+                {
+                    "long_name": "ameriflux_minus_casa_surface_upward_carbon_dioxide_"
+                    "flux_difference_number_of_pairs_at_lag",
+                    "units": "1",
+                },
+            ),
+        },
+        {
+            "site": (
+                ("site",),
+                AMERIFLUX_MINUS_CASA_DATA.coords["site"].values,
+            ),
+            "time_lag": (
+                ("time_lag",),
+                TIME_LAG_INDEX,
+                {
+                    "long_name": "time_difference",
+                },
+            ),
+        },
+    )
 
-# for site in AMERIFLUX_MINUS_CASA_DATA.indexes["site"]:
-#     correlation_data = get_autocorrelation_stats(
-#         AMERIFLUX_MINUS_CASA_DATA["flux_difference"]
-#         .sel(site=site)
-#         .to_series()
-#         .dropna()
-#         .resample("1H").first()
-#     )
-#     AUTOCORRELATION_DATA["flux_error_autocorrelation"].sel(
-#         site=site
-#     ).isel(
-#         time_lag=slice(None, len(correlation_data))
-#     ).values[:] = correlation_data["acf"]
-#     AUTOCORRELATION_DATA["flux_error_autocovariance"].sel(
-#         site=site
-#     ).isel(
-#         time_lag=slice(None, len(correlation_data))
-#     ).values[:] = correlation_data["acovf"]
-#     AUTOCORRELATION_DATA["flux_error_n_pairs"].sel(
-#         site=site
-#     ).isel(
-#         time_lag=slice(None, len(correlation_data))
-#     ).values[:] = correlation_data["pair_counts"]
+    for site in AMERIFLUX_MINUS_CASA_DATA.indexes["site"]:
+        correlation_data = get_autocorrelation_stats(
+            AMERIFLUX_MINUS_CASA_DATA["flux_difference"]
+            .sel(site=site)
+            .to_series()
+            .dropna()
+            .resample("1H")
+            .first()
+        )
+        AUTOCORRELATION_DATA["flux_error_autocorrelation"].sel(site=site).isel(
+            time_lag=slice(None, len(correlation_data))
+        ).values[:] = correlation_data["acf"]
+        AUTOCORRELATION_DATA["flux_error_autocovariance"].sel(site=site).isel(
+            time_lag=slice(None, len(correlation_data))
+        ).values[:] = correlation_data["acovf"]
+        AUTOCORRELATION_DATA["flux_error_n_pairs"].sel(site=site).isel(
+            time_lag=slice(None, len(correlation_data))
+        ).values[:] = correlation_data["pair_counts"]
 
-# encoding = {var: {"_FillValue": -9999, "zlib": True}
-#             for var in AUTOCORRELATION_DATA.data_vars}
-# encoding.update({var: {"_FillValue": None}
-#                  for var in AUTOCORRELATION_DATA.coords})
+    # Save the new dataset
+    encoding = {
+        var: {"_FillValue": -9999, "zlib": True}
+        for var in AUTOCORRELATION_DATA.data_vars
+    }
+    encoding.update({var: {"_FillValue": None} for var in AUTOCORRELATION_DATA.coords})
 
-# AUTOCORRELATION_DATA.to_netcdf(
-#     "ameriflux-minus-casa-autocorrelation-data-all-towers.nc4",
-#     format="NETCDF4_CLASSIC", encoding=encoding
-# )
-
-AUTOCORRELATION_DATA = xarray.open_dataset(
-    "ameriflux-minus-casa-autocorrelation-data-all-towers.nc4",
-)
+    AUTOCORRELATION_DATA.to_netcdf(
+        "ameriflux-minus-casa-autocorrelation-data-all-towers.nc4",
+        format="NETCDF4_CLASSIC",
+        encoding=encoding,
+    )
+else:
+    AUTOCORRELATION_DATA = xarray.open_dataset(
+        "ameriflux-minus-casa-autocorrelation-data-all-towers.nc4",
+    )
 
 ############################################################
 # Trim to just the useful bits for each tower
@@ -427,7 +419,6 @@ CROSS_TOWER_FIT_ERROR_DS = xarray.Dataset(
                     "1",  #    resid_coef = 0.05,
                     "fortnights",  #    resid_timescale = 2.,
                     "1",  #    ec_coef = 0.7,
-                    "hours",  #    ec_timescale = 2.,
                 ],
             },
         ),
@@ -703,7 +694,7 @@ for i in range(N_SPLITS):
                     lower_bounds.astype(np.float32),
                     upper_bounds.astype(np.float32),
                 ),
-                jac=curve_deriv,
+                # jac=curve_deriv,
             )
         except (RuntimeError, ValueError) as err:
             _LOGGER.error("Curve fit failed, next split")
@@ -717,6 +708,8 @@ for i in range(N_SPLITS):
                 "Corr data:\n%s",
                 corr_data_train["flux_error_autocorrelation"].astype(np.float32).values,
             )
+            if err.message == "array must not contain infs or NaNs":
+                raise
             continue
 
         FUNCTION_PARAMS_AND_COV[-1].append(
@@ -769,6 +762,7 @@ FUNCTION_PARAMS_AND_COV_DS = xarray.concat(
     [
         xarray.concat(ds_list, dim="correlation_function")
         for ds_list in FUNCTION_PARAMS_AND_COV
+        if len(ds_list) > 0
     ],
     dim="splits",
 )
@@ -781,9 +775,21 @@ encoding = {
 encoding.update(
     {name: {"_FillValue": None} for name in CROSS_TOWER_FIT_ERROR_DS.coords}
 )
+rerun_number = 1
+while True:
+    print(rerun_number)
+    save_name = (
+        "ameriflux-minus-casa-autocorrelation-function-multi-tower-fits"
+        "-{:03d}splits-run{:01d}.nc4".format(N_SPLITS, rerun_number)
+    )
+    if not os.path.exists(save_name):
+        break
+    rerun_number += 1
+
+
+
 CROSS_TOWER_FIT_ERROR_DS.to_netcdf(
-    "ameriflux-minus-casa-autocorrelation-function-multi-tower-fits"
-    "-300splits-run2.nc4",
+    save_name,
     format="NETCDF4",
     encoding=encoding,
 )
