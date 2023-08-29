@@ -1,8 +1,6 @@
 #!/usr/bin/env python
 from __future__ import print_function
 
-import collections
-
 import matplotlib as mpl
 
 mpl.use("Agg")
@@ -12,7 +10,6 @@ import pandas as pd
 import patsy
 import scipy
 import seaborn as sns
-import statsmodels.api as sm
 import statsmodels.formula.api as smf
 import xarray
 from statsmodels.stats.anova import anova_lm
@@ -333,15 +330,23 @@ grid.set_titles(
 )
 grid.set_xlabels("Cross-Validation\nError")
 grid.fig.tight_layout()
-grid.fig.savefig("multi-tower-cross-validation-error-by-function.pdf", bbox_inches="tight")
-grid.fig.savefig("multi-tower-cross-validation-error-by-function.png", bbox_inches="tight")
+grid.fig.savefig(
+    "multi-tower-cross-validation-error-by-function.pdf", bbox_inches="tight"
+)
+grid.fig.savefig(
+    "multi-tower-cross-validation-error-by-function.png", bbox_inches="tight"
+)
 
 for ax in grid.axes.flat:
     ax.set_xscale("log")
     ax.set_xlim(0.04e9, 3e9)
 
-grid.fig.savefig("multi-tower-log-cross-validation-error-by-function.pdf", bbox_inches="tight")
-grid.fig.savefig("multi-tower-log-cross-validation-error-by-function.png", bbox_inches="tight")
+grid.fig.savefig(
+    "multi-tower-log-cross-validation-error-by-function.pdf", bbox_inches="tight"
+)
+grid.fig.savefig(
+    "multi-tower-log-cross-validation-error-by-function.png", bbox_inches="tight"
+)
 
 ############################################################
 # Draw boxplots showing details of distribution for best functions
@@ -389,15 +394,23 @@ grid.set_titles(
 )
 grid.set_xlabels("Cross-Validation\nError")
 grid.fig.tight_layout()
-grid.fig.savefig("multi-tower-cross-validation-best-error-by-function.pdf", bbox_inches="tight")
-grid.fig.savefig("multi-tower-cross-validation-best-error-by-function.png", bbox_inches="tight")
+grid.fig.savefig(
+    "multi-tower-cross-validation-best-error-by-function.pdf", bbox_inches="tight"
+)
+grid.fig.savefig(
+    "multi-tower-cross-validation-best-error-by-function.png", bbox_inches="tight"
+)
 
 for ax in grid.axes.flat:
     ax.set_xscale("log")
     ax.set_xlim(0.04e9, 3e9)
 
-grid.fig.savefig("multi-tower-log-cross-validation-best-error-by-function.pdf", bbox_inches="tight")
-grid.fig.savefig("multi-tower-log-cross-validation-best-error-by-function.png", bbox_inches="tight")
+grid.fig.savefig(
+    "multi-tower-log-cross-validation-best-error-by-function.pdf", bbox_inches="tight"
+)
+grid.fig.savefig(
+    "multi-tower-log-cross-validation-best-error-by-function.png", bbox_inches="tight"
+)
 
 ############################################################
 # Sorted box plots
@@ -477,8 +490,12 @@ for ax in grid.axes[0, :]:
     ylim = grid.axes[0, 0].get_ylim()
     # ax.set_ylim(ylim)
 
-grid.fig.savefig("multi-tower-cross-validation-log-error-anova-variations.pdf", bbox_inches="tight")
-grid.fig.savefig("multi-tower-cross-validation-log-error-anova-variations.png", bbox_inches="tight")
+grid.fig.savefig(
+    "multi-tower-cross-validation-log-error-anova-variations.pdf", bbox_inches="tight"
+)
+grid.fig.savefig(
+    "multi-tower-cross-validation-log-error-anova-variations.png", bbox_inches="tight"
+)
 
 ############################################################
 # Compare best means with CIs
@@ -504,8 +521,12 @@ for ax in grid.axes[0, :]:
     ylim = grid.axes[0, 0].get_ylim()
     # ax.set_ylim(ylim)
 
-grid.fig.savefig("multi-tower-cross-validation-best-error-anova-variations.pdf", bbox_inches="tight")
-grid.fig.savefig("multi-tower-cross-validation-best-error-anova-variations.png", bbox_inches="tight")
+grid.fig.savefig(
+    "multi-tower-cross-validation-best-error-anova-variations.pdf", bbox_inches="tight"
+)
+grid.fig.savefig(
+    "multi-tower-cross-validation-best-error-anova-variations.png", bbox_inches="tight"
+)
 
 ############################################################
 # Calculate summary statistics
@@ -529,9 +550,9 @@ ldesc.loc["n_parameters", :] = (
 
 ############################################################
 # Plot cross-validation error as a function of complexity
-mean_error_by_parameters = ldesc.loc[["n_parameters", "mean"], :].T.groupby(
-    "n_parameters"
-).min()
+mean_error_by_parameters = (
+    ldesc.loc[["n_parameters", "mean"], :].T.groupby("n_parameters").min()
+)
 fig = plt.figure(figsize=(4.5, 3.5), constrained_layout=True)
 ax = sns.scatterplot(x="n_parameters", y="mean", data=ldesc.T, x_jitter=True, alpha=0.6)
 ax.plot(
@@ -628,11 +649,17 @@ grid.fig.savefig("multi-tower-cross-validation-coefficient-variation.pdf")
 # Create the parameter table LaTeX
 # There's some rearranging of columns after
 ds_mean = ds.mean("splits")
-ds_top = ds_mean.sel(correlation_function=ds_mean["cross_validation_error"] < 2e8).sortby("cross_validation_error")
+ds_top = ds_mean.sel(
+    correlation_function=ds_mean["cross_validation_error"] < 2e8
+).sortby("cross_validation_error")
 
-parameter_table = ds_top["optimized_parameters"].set_index(
-    correlation_function="correlation_function_short_name"
-).to_series().unstack(1).round(3)
+parameter_table = (
+    ds_top["optimized_parameters"]
+    .set_index(correlation_function="correlation_function_short_name")
+    .to_series()
+    .unstack(1)
+    .round(3)
+)
 
 for col_name in ("daily_timescale", "resid_timescale"):
     # Convert fortnights to weeks
@@ -640,8 +667,17 @@ for col_name in ("daily_timescale", "resid_timescale"):
 # Convert decades to years
 parameter_table["ann_timescale"] = parameter_table["ann_timescale"] * 10
 
-for col_name in ("cross_validation_error", "daily_cycle", "annual_modulation_of_daily_cycle", "annual_cycle"):
-    parameter_table[col_name] = ds_top[col_name].set_index(correlation_function="correlation_function_short_name").to_series()
+for col_name in (
+    "cross_validation_error",
+    "daily_cycle",
+    "annual_modulation_of_daily_cycle",
+    "annual_cycle",
+):
+    parameter_table[col_name] = (
+        ds_top[col_name]
+        .set_index(correlation_function="correlation_function_short_name")
+        .to_series()
+    )
     if col_name == "cross_validation_error":
         parameter_table[col_name] = parameter_table[col_name].round(-5) / 1e8
     else:
@@ -658,7 +694,7 @@ def index_key(index):
     values = index.values.astype("U")
     split = np.array(
         np.char.split(parameter_table.columns.values.astype("U"), "_", 1).tolist(),
-        dtype="U"
+        dtype="U",
     )
     slot_ordering = ("annual", "daily", "dm", "ann", "resid", "ec", "cross")
     first_part = [slot_ordering.index(first) for first in split[:, 0]]
@@ -674,15 +710,29 @@ def index_key(index):
 parameter_table.sort_index(axis=1, key=index_key).set_index(
     ["daily_cycle", "annual_modulation_of_daily_cycle", "annual_cycle"]
 ).rename(
-    {"daily_coef": "$C_d$", "daily_timescale": "$T_d$",
-     "daily_coef1": "$b_{1d}$", "daily_coef2": "$b_{2d}$", "daily_width": "$w_d$",
-     "dm_coef1": "$b_{1dm}$", "dm_coef2": "$b_{2dm}$", "dm_width": "$w_{dm}$",
-     "ann_coef": "$C_a$", "ann_timescale": "$T_a$",
-     "ann_coef1": "$b_{1a}$", "ann_coef2": "$b_{2a}$", "ann_width": "$w_a$",
-     "resid_coef": "$C_o$", "resid_timescale": "$T_o$",
-     "ec_coef": "$C_{ec}$", "ec_timescale": "$T_{ec}$"},
-    axis=1
-).to_latex("parameter_table.tex", na_rep="{---}")
+    {
+        "daily_coef": "$C_d$",
+        "daily_timescale": "$T_d$",
+        "daily_coef1": "$b_{1d}$",
+        "daily_coef2": "$b_{2d}$",
+        "daily_width": "$w_d$",
+        "dm_coef1": "$b_{1dm}$",
+        "dm_coef2": "$b_{2dm}$",
+        "dm_width": "$w_{dm}$",
+        "ann_coef": "$C_a$",
+        "ann_timescale": "$T_a$",
+        "ann_coef1": "$b_{1a}$",
+        "ann_coef2": "$b_{2a}$",
+        "ann_width": "$w_a$",
+        "resid_coef": "$C_o$",
+        "resid_timescale": "$T_o$",
+        "ec_coef": "$C_{ec}$",
+        "ec_timescale": "$T_{ec}$",
+    },
+    axis=1,
+).to_latex(
+    "parameter_table.tex", na_rep="{---}"
+)
 
 ############################################################
 # Render figures

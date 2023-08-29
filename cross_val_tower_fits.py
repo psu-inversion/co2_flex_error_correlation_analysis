@@ -21,9 +21,12 @@ import pint
 import scipy.optimize
 import xarray
 
-from correlation_function_fits import (CorrelationPart, PartForm,
-                                       get_full_parameter_list,
-                                       is_valid_combination)
+from correlation_function_fits import (
+    CorrelationPart,
+    PartForm,
+    get_full_parameter_list,
+    is_valid_combination,
+)
 from correlation_utils import get_autocorrelation_stats
 
 print(datetime.datetime.now())
@@ -785,7 +788,6 @@ while True:
     if not os.path.exists(save_name):
         break
     rerun_number += 1
-
 
 
 CROSS_TOWER_FIT_ERROR_DS.to_netcdf(

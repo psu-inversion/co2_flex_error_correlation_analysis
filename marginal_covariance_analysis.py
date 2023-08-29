@@ -7,7 +7,6 @@ from __future__ import division, print_function
 import calendar
 import datetime
 import inspect
-
 import itertools
 import operator
 import re
@@ -19,7 +18,6 @@ except ImportError:
 
 import bottleneck as bn
 import cartopy.crs as ccrs
-
 import dask.array as da
 import dask.config
 import matplotlib.pyplot as plt
@@ -27,18 +25,12 @@ import numpy as np
 import pandas as pd
 import pyproj
 import scipy.optimize
-
-import flux_correlation_function_fits
 import xarray
 from bottleneck import nansum
 from numpy import cos, exp, newaxis, sin, square
 from statsmodels.tools.eval_measures import aic, aicc, bic, hqic
 from statsmodels.tsa.stattools import acf, acovf
 
-import correlation_function_fits
-from correlation_function_fits import (CorrelationPart, PartForm,
-                                       get_full_parameter_list,
-                                       is_valid_combination)
 from correlation_utils import count_pairs
 
 # import pymc3 as pm
@@ -191,7 +183,7 @@ def save_dataset_netcdf(dataset, filename):
     date_index = dataset.indexes["TIMESTAMP_START"]
     dataset.coords["time_bnds"] = xarray.DataArray(
         np.column_stack(
-            [date_index.values, date_index.values + np.array(1, dtype="m8[h]")]
+            [date_index.to_array(), date_index.to_array() + np.array(1, dtype="m8[h]")]
         ),
         dims=("TIMESTAMP_START", "bnds2"),
         attrs=dict(standard_name="time", coverage_content_type="coordinate"),
@@ -276,7 +268,8 @@ if not DATA_MERGED:
     if not HALF_HOUR_DATA_RESAMPLED:
         amf_half_hour_ds = xarray.open_dataset(
             "/abl/s0/Continent/dfw5129/ameriflux_netcdf/ameriflux_base_data/output/"
-            "AmeriFlux_all_CO2_fluxes_with_single_estimate_per_tower_half_hour_data.nc4",
+            "AmeriFlux_all_CO2_fluxes_with_single_estimate_per_tower_half_hour_data"
+            ".nc4",
             chunks={"TIMESTAMP_START": 2 * int(2 * HOURS_PER_YEAR)},
         ).load()
         # # amf_half_hour_ds.coords["TIMESTAMP_START"] = (
@@ -304,11 +297,13 @@ if not DATA_MERGED:
         print("Writing half-hour data to disk", flush=True)
         save_dataset_netcdf(
             amf_half_hour_ds,
-            "AmeriFlux_all_CO2_fluxes_with_single_estimate_per_tower_half_hour_data_resampled_to_hourly.nc4",
+            "AmeriFlux_all_CO2_fluxes_with_single_estimate_per_tower_half_hour_data_"
+            "resampled_to_hourly.nc4",
         )
     else:
         amf_half_hour_ds = xarray.open_dataset(
-            "AmeriFlux_all_CO2_fluxes_with_single_estimate_per_tower_half_hour_data_resampled_to_hourly.nc4"
+            "AmeriFlux_all_CO2_fluxes_with_single_estimate_per_tower_half_hour_data_"
+            "resampled_to_hourly.nc4"
         )
     print("Combining AmeriFlux data", flush=True)
     amf_ds = (
@@ -420,10 +415,16 @@ matching_data_ds["flux_difference"].attrs.update(
 
 matching_data_ds.attrs.update(
     dict(
-        history="created from processed Ameriflux data files and 500m CASA outputs downscaled using ERA5",
+        history=(
+            "created from processed Ameriflux data files and "
+            "500m CASA outputs downscaled using ERA5"
+        ),
         institution=PSU,
         title="Ameriflux minus CASA carbon dioxide flux differences",
-        acknowledgement="CASA: ACT-America\nERA5: ECMWF\nAmeriFlux Towers: {ameriflux_sources:s}".format(
+        acknowledgement=(
+            "CASA: ACT-America\nERA5: ECMWF\n"
+            "AmeriFlux Towers: {ameriflux_sources:s}"
+        ).format(
             ameriflux_sources=""
         ),
         cdm_data_type="Station",
@@ -446,7 +447,10 @@ matching_data_ds.attrs.update(
         product_version=1,
         program="NASA EVS",
         project="Atmospheric Carbon and Transport-America",
-        source="CASA from Yu et al. (2020), retrieved from ORNL; AmeriFlux data from various contributors",
+        source=(
+            "CASA from Yu et al. (2020), retrieved from ORNL; "
+            "AmeriFlux data from various contributors"
+        ),
         standard_name_vocabulary="CF Standard Name table v70",
         time_coverage_start=matching_data_ds.indexes["time"][0].isoformat(),
         time_coverage_end=matching_data_ds.indexes["time"][-1].isoformat(),
@@ -732,10 +736,16 @@ for name in ("SITE_FUNDING", "ACKNOWLEDGEMENT"):
 
 difference_rect_xarray.attrs.update(
     dict(
-        history="created from processed Ameriflux data files and 500m CASA outputs downscaled using ERA5",
+        history=(
+            "created from processed Ameriflux data files and "
+            "500m CASA outputs downscaled using ERA5"
+        ),
         institution=PSU,
         title="Ameriflux minus CASA carbon dioxide flux differences",
-        acknowledgement="CASA: ACT-America\nERA5: ECMWF\nAmeriFlux Towers: {ameriflux_sources:s}".format(
+        acknowledgement=(
+            "CASA: ACT-America\nERA5: ECMWF\n"
+            "AmeriFlux Towers: {ameriflux_sources:s}"
+        ).format(
             ameriflux_sources=""
         ),
         cdm_data_type="Station",
@@ -758,7 +768,10 @@ difference_rect_xarray.attrs.update(
         product_version=1,
         program="NASA EVS",
         project="Atmospheric Carbon and Transport-America",
-        source="CASA from Yu et al. (2020), retrieved from ORNL; AmeriFlux data from various contributors",
+        source=(
+            "CASA from Yu et al. (2020), retrieved from ORNL; "
+            "AmeriFlux data from various contributors"
+        ),
         standard_name_vocabulary="CF Standard Name table v70",
         time_coverage_start=difference_rect_xarray.indexes["TIMESTAMP_START"][
             0
@@ -963,7 +976,10 @@ for column in difference_df_rect.columns:
     )
     acf_data.loc[acovf_index[:nlags], column] = acf_col
     # varacf = np.ones(nlags + 1) / col_data.count()
-    # np.ones(acf_data.shape) / acf_data.count()[np.newaxis, :] * (1 + 2 * acf_data.cumsum() ** 2)
+    # (
+    #     np.ones(acf_data.shape) / acf_data.count()[np.newaxis, :]
+    #     * (1 + 2 * acf_data.cumsum() ** 2)
+    # )
     # acf_width.loc[acovf_index[:nlags], column] = confint[:, 1] - confint[:, 0]
     pair_counts.loc[acovf_index[:nlags], column] = count_pairs(col_data)[:nlags]
 
@@ -1116,7 +1132,7 @@ plt.close()
 
 
 def exp_only(tdata, resid_coef, To, Tec):
-    """Current practice: Decaying exponential
+    """Current practice: Decaying exponential.
 
     d_0 dm_0 a_0
     """
@@ -1184,9 +1200,13 @@ def exp_cos_daily_annual(
 def exp_cos_daily_expsin2_annual(
     tdata, daily_coef, Td, ann_coef, ann_width, Ta, resid_coef, To, ec_coef, Tec
 ):
-    """Errors in daily cycle correlated day-night + Correlated errors in seasonal cycle are only positive
+    """Calculate correlations for an always-positive correlation model.
+
+    Errors in daily cycle correlated day-night + Correlated errors in
+    seasonal cycle are only positive
 
     d_c dm_0 a_p
+
     """
     Tec /= HOURS_PER_DAY
     Td *= DAYS_PER_WEEK
@@ -1306,9 +1326,13 @@ def exp_cos_daily_times_cos_annual_plus_cos_annual(
     ec_coef,
     Tec,
 ):
-    """Daily cycle errors not correlated day-night, may be anticorrelated, seasonal errors correlated
+    """Calculate cosine-based correlation model.
+
+    Daily cycle errors not correlated day-night, may be
+    anticorrelated, seasonal errors correlated
 
     d_c dm_c a_c
+
     """
     Tec /= HOURS_PER_DAY
     Ta *= DAYS_PER_YEAR
@@ -1392,7 +1416,12 @@ def exp_cos_daily_times_expsin2_annual_plus_cos_annual(
     ec_coef,
     Tec,
 ):
-    """Daily cycle errors not correlated day-night, may be anticorrelated, seasonal errors correlated"""
+    """Calculate correlations for given times.
+
+    Daily cycle errors not correlated day-night, may be
+    anticorrelated, seasonal errors correlated
+
+    """
     Tec /= HOURS_PER_DAY
     Ta *= DAYS_PER_YEAR
     To *= DAYS_PER_WEEK
@@ -1665,7 +1694,9 @@ for column in acf_data.iloc[:, :]:
         # # ax.legend()
         # loglik = loglik_fn(param_vals)
         # for ic_fun in INF_CRIT:
-        #     IC_DATA.loc[(column, corr_fun.__name__), ic_fun.__name__] = ic_fun(loglik, 1, len(param_names))
+        #     IC_DATA.loc[
+        #         (column, corr_fun.__name__), ic_fun.__name__
+        #     ] = ic_fun(loglik, 1, len(param_names))
         # ic_str = "AIC: {aic:3.2e} AICC: {aicc:3.2e} BIC: {3.2e} HQIC: {3.2e}".format(
         #     IC_DATA.loc[(column, corr_fun.__name__), :]
         # )

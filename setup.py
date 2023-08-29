@@ -12,11 +12,14 @@ import numpy as np
 from Cython.Build import cythonize
 from setuptools import Extension, setup
 
-from correlation_function_fits import (CorrelationPart, PartForm,
-                                       get_full_expression,
-                                       get_full_parameter_list,
-                                       get_weighted_fit_expression,
-                                       is_valid_combination)
+from correlation_function_fits import (
+    CorrelationPart,
+    PartForm,
+    get_full_expression,
+    get_full_parameter_list,
+    get_weighted_fit_expression,
+    is_valid_combination,
+)
 
 OUT_FILE_NAME = "flux_correlation_function_fits.pyx"
 
@@ -267,9 +270,7 @@ def {function_name:s}_fit_loop(
                         (
                             "    cdef floating_type {param_name:s}"
                             " = parameters[{i:d}]\n"
-                        ).format(
-                            i=i, param_name=param_name
-                        )
+                        ).format(i=i, param_name=param_name)
                         for i, param_name in enumerate(get_full_parameter_list(*forms))
                     ]
                 ),
@@ -367,7 +368,9 @@ def {function_name:s}_curve_loop(
             resid_corr = resid_coef * exp(-tdata / resid_timescale)
             here_corr += resid_corr
             deriv[i, n_parameters - 3] = exp(-tdata / resid_timescale)
-            deriv[i, n_parameters - 2] = resid_corr * tdata / resid_timescale ** 2 * DAYS_PER_FORTNIGHT
+            deriv[i, n_parameters - 2] = (
+                resid_corr * tdata / resid_timescale ** 2 * DAYS_PER_FORTNIGHT
+            )
 
         if tdata == 0:
             ec_corr = ec_coef

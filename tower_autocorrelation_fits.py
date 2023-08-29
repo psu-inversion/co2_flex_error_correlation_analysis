@@ -6,7 +6,6 @@ One tower at a time, still.
 """
 import inspect
 
-import flux_correlation_functions
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -138,7 +137,7 @@ for column in corr_data.iloc[:, :]:
         tower_counts != 0
     ]
     tower_counts = tower_counts.loc[tower_correlations.index]
-    tower_lags = tower_correlations.index.values.astype("m8[h]").astype("u8")
+    tower_lags = tower_correlations.index.to_array().astype("m8[h]").view("u8")
     tower_lags -= tower_lags[0]
     tower_lags = tower_lags.astype(np.float32) / HOURS_PER_DAY
     if (
