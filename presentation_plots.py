@@ -379,16 +379,23 @@ CORRELATION_TIMES = (
     correlation_data.index.values.astype("m8[h]").astype("i8").astype("f4") / 24
 )
 CORRELATIONS = {
-    "EC-driven: with ann.": flux_correlation_function_fits.dc_dmc_ap_curve_ne(
+    "EC-driven: best": flux_correlation_function_fits.dc_dmp_ac_curve_ne(
         CORRELATION_TIMES,
-        **MEAN_COEFFICIENTS.sel(correlation_function="dc_dmc_ap")
+        **MEAN_COEFFICIENTS.sel(correlation_function="dc_dmp_ac")
         .to_series()
         .dropna()
         .to_dict(),
     ),
-    "EC-driven no ann.": flux_correlation_function_fits.dp_dmc_a0_curve_ne(
+    "EC-driven: second-best": flux_correlation_function_fits.dp_dmc_ac_curve_ne(
         CORRELATION_TIMES,
-        **MEAN_COEFFICIENTS.sel(correlation_function="dp_dmc_a0")
+        **MEAN_COEFFICIENTS.sel(correlation_function="dp_dmc_ac")
+        .to_series()
+        .dropna()
+        .to_dict(),
+    ),
+    "EC-driven: third-best": flux_correlation_function_fits.dc_dmp_ad_curve_ne(
+        CORRELATION_TIMES,
+        **MEAN_COEFFICIENTS.sel(correlation_function="dc_dmp_ad")
         .to_series()
         .dropna()
         .to_dict(),

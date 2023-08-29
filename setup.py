@@ -404,7 +404,7 @@ def {function_name:s}_curve_loop(
 setup(
     name="co2_flux_correlation_analysis",
     author="DWesl",
-    version="0.0.0.dev1",
+    version="0.0.0.rc2",
     py_modules=["correlation_function_fits", "correlation_utils"],
     ext_modules=cythonize(
         [

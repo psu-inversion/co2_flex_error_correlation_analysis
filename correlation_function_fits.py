@@ -171,10 +171,11 @@ class PartForm(Enum):
                 # One month
                 cutoff_one = 1./12
             cutoff_two = 1 - cutoff_one
+            slope = 1/cutoff_one
             main = (
-                "where(((tdata / DAYS_PER_{{time:s}}) % 1) < {cutoff_one:f}, 1 - 8 * ((tdata / DAYS_PER_{{time:s}}) % 1), "
-                "where(((tdata / DAYS_PER_{{time:s}}) % 1) > {cutoff_two:f}, 8 * ((tdata / DAYS_PER_{{time:s}}) % 1 - {cutoff_two:f}), 0))"
-            ).format(cutoff_one=cutoff_one, cutoff_two=cutoff_two)
+                "where(((tdata / DAYS_PER_{{time:s}}) % 1) < {cutoff_one:f}, 1 - {slope:.1f} * ((tdata / DAYS_PER_{{time:s}}) % 1), "
+                "where(((tdata / DAYS_PER_{{time:s}}) % 1) > {cutoff_two:f}, {slope:.1f} * ((tdata / DAYS_PER_{{time:s}}) % 1 - {cutoff_two:f}), 0))"
+            ).format(cutoff_one=cutoff_one, cutoff_two=cutoff_two, slope=slope)
 
         if not part.is_modulation():
             # The exponential die-off is only for the main

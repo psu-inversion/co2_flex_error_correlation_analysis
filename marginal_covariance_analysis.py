@@ -256,7 +256,7 @@ def save_dataset_netcdf(dataset, filename):
 ############################################################
 # Read in flux data
 print("Reading AmeriFlux data", flush=True)
-DATA_MERGED = True
+DATA_MERGED = False
 if not DATA_MERGED:
     amf_hour_ds = xarray.open_dataset(
         "/abl/s0/Continent/dfw5129/ameriflux_netcdf/ameriflux_base_data/output/"
@@ -538,12 +538,20 @@ matching_data_month_ds.coords["climatology_bounds_approximation"] = (
 del encoding["time"], encoding["height"]
 matching_data_month_hour_ds.to_netcdf(
     "ameriflux-and-casa-all-towers-daily-cycle-by-month.nc4",
-    encoding=encoding,
+    encoding={
+        key: val
+        for key, val in encoding.items()
+        if key in matching_data_month_hour_ds.variables
+    },
     engine="h5netcdf",
 )
 matching_data_month_ds.to_netcdf(
     "ameriflux-and-casa-all-towers-seasonal-cycle.nc4",
-    encoding=encoding,
+    encoding={
+        key: val
+        for key, val in encoding.items()
+        if key in matching_data_month_ds.variables
+    },
     engine="h5netcdf",
 )
 
@@ -774,6 +782,8 @@ encoding = {
 }
 encoding.update({name: {"_FillValue": None} for name in difference_rect_xarray.coords})
 
+# _LOGGER.info(
+print(difference_rect_xarray)
 difference_rect_xarray.to_netcdf(
     "ameriflux_minus_casa_hour_tower_data.nc4",
     encoding=encoding,

@@ -11,6 +11,7 @@ from __future__ import division, print_function, unicode_literals
 import datetime
 import itertools
 import logging
+import os.path
 import random
 
 import numpy as np
@@ -51,7 +52,7 @@ UREG = pint.UnitRegistry()
 N_YEARS_DATA = 4
 REQUIRED_DATA_FRAC = 0.8
 
-N_SPLITS = 300
+N_SPLITS = 350
 # There are 75 towers that fit my criteria
 N_TRAINING = 45
 N_HYPER_TRAIN = 30
@@ -164,7 +165,7 @@ STARTING_PARAMS = dict(
     daily_coef1=0.7,
     daily_coef2=0.3,
     daily_width=0.5,
-    daily_timescale=500,  # fortnights
+    daily_timescale=50,  # fortnights
     dm_width=0.8,
     dm_coef1=0.3,
     dm_coef2=+0.1,
@@ -176,7 +177,6 @@ STARTING_PARAMS = dict(
     resid_coef=0.03,
     resid_timescale=2.0,  # fortnights
     ec_coef=0.5,
-    ec_timescale=3.0,  # hours
 )
 PARAM_LOWER_BOUNDS = dict(
     daily_coef=-10,
@@ -195,14 +195,13 @@ PARAM_LOWER_BOUNDS = dict(
     resid_coef=-10,
     resid_timescale=0.0,  # fortnights
     ec_coef=-10,
-    ec_timescale=0.0,  # hours
 )
 PARAM_UPPER_BOUNDS = dict(
     daily_coef=10,
     daily_coef1=10,
     daily_coef2=10,
     daily_width=10,
-    daily_timescale=500,  # fortnights
+    daily_timescale=5000,  # fortnights
     dm_width=10,
     dm_coef1=10,
     dm_coef2=10,
@@ -210,11 +209,10 @@ PARAM_UPPER_BOUNDS = dict(
     ann_coef2=10,
     ann_coef=10,
     ann_width=10,
-    ann_timescale=4,  # decades
+    ann_timescale=40,  # decades
     resid_coef=10,
-    resid_timescale=500.0,  # fortnights
+    resid_timescale=5000.0,  # fortnights
     ec_coef=10,
-    ec_timescale=1000.0,  # hours
 )
 
 # Convert initial values and bounds to float32
@@ -424,7 +422,6 @@ CROSS_TOWER_FIT_ERROR_DS = xarray.Dataset(
                     "1",  #    resid_coef = 0.05,
                     "fortnights",  #    resid_timescale = 2.,
                     "1",  #    ec_coef = 0.7,
-                    "hours",  #    ec_timescale = 2.,
                 ],
             },
         ),
