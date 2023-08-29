@@ -943,21 +943,24 @@ plt.close(fig)
 
 ############################################################
 # Find temporal autocorrelations, autocovariances, and pairs per lag.
-acovf_index = pd.timedelta_range(start=0, freq="1H", periods=24 * 365 * 12)
+acovf_index = pd.timedelta_range(start=0, freq="1H", periods=int(24 * 365.2425 * 17))
 acovf_data = pd.DataFrame(index=acovf_index)
 acf_data = pd.DataFrame(index=acovf_index)
 # acf_width = pd.DataFrame(index=acovf_index)
 pair_counts = pd.DataFrame(index=acovf_index)
 
 for column in difference_df_rect.columns:
+    print(column)
     col_data = difference_df_rect.loc[:, column].dropna()
     if col_data.shape[0] == 0:
         continue
     col_data = col_data.resample("1H").mean()
-    acovf_col = acovf(col_data, missing="conservative")
+    acovf_col = acovf(col_data, missing="conservative", adjusted=True, fft=True)
     nlags = len(acovf_col)
     acovf_data.loc[acovf_index[:nlags], column] = acovf_col
-    acf_col = acf(col_data, missing="conservative", nlags=nlags, adjusted=True)
+    acf_col = acf(
+        col_data, missing="conservative", nlags=nlags, adjusted=True, fft=True
+    )
     acf_data.loc[acovf_index[:nlags], column] = acf_col
     # varacf = np.ones(nlags + 1) / col_data.count()
     # np.ones(acf_data.shape) / acf_data.count()[np.newaxis, :] * (1 + 2 * acf_data.cumsum() ** 2)

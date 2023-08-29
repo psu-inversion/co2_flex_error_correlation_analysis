@@ -58,7 +58,7 @@ N_TRAINING = 45
 N_HYPER_TRAIN = 30
 N_CROSS_VAL = 0  # or whatever's left
 
-CALCULATE_AUTOCORRELATIONS = True
+CALCULATE_AUTOCORRELATIONS = False
 
 # Configure logging
 logging.basicConfig(
@@ -697,7 +697,7 @@ for i in range(N_SPLITS):
                     lower_bounds.astype(np.float32),
                     upper_bounds.astype(np.float32),
                 ),
-                jac=curve_deriv,
+                # jac=curve_deriv,
             )
         except (RuntimeError, ValueError) as err:
             _LOGGER.error("Curve fit failed, next split")
@@ -711,6 +711,8 @@ for i in range(N_SPLITS):
                 "Corr data:\n%s",
                 corr_data_train["flux_error_autocorrelation"].astype(np.float32).values,
             )
+            if err.message == "array must not contain infs or NaNs":
+                raise
             continue
 
         FUNCTION_PARAMS_AND_COV[-1].append(
@@ -763,6 +765,7 @@ FUNCTION_PARAMS_AND_COV_DS = xarray.concat(
     [
         xarray.concat(ds_list, dim="correlation_function")
         for ds_list in FUNCTION_PARAMS_AND_COV
+        if len(ds_list) > 0
     ],
     dim="splits",
 )
@@ -775,9 +778,20 @@ encoding = {
 encoding.update(
     {name: {"_FillValue": None} for name in CROSS_TOWER_FIT_ERROR_DS.coords}
 )
+rerun_number = 1
+while True:
+    print(rerun_number)
+    save_name = (
+        "ameriflux-minus-casa-autocorrelation-function-multi-tower-fits"
+        "-{:03d}splits-run{:01d}.nc4".format(N_SPLITS, rerun_number)
+    )
+    if not os.path.exists(save_name):
+        break
+    rerun_number += 1
+
+
 CROSS_TOWER_FIT_ERROR_DS.to_netcdf(
-    "ameriflux-minus-casa-autocorrelation-function-multi-tower-fits"
-    "-300splits-run3.nc4",
+    save_name,
     format="NETCDF4",
     encoding=encoding,
 )

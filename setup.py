@@ -143,8 +143,8 @@ def {func_name:s}_curve_ne(
     return ne.evaluate(
         "{full_expr:s}",
         local_dict={{
+            "tdata": tdata,
 {param_names_from_parameters:s}
-            "tdata": tdata
         }},
         global_dict=GLOBAL_DICT,
     )
@@ -156,13 +156,13 @@ def {func_name:s}_curve_ne(
         )
         for part, form in zip(CorrelationPart, forms)
     ]),
-    param_names_from_parameters="".join([
-        "            \"{param_name:s}\": {param_name:s},\n"
+    param_names_from_parameters=",\n".join([
+        "            \"{param_name:s}\": {param_name:s}"
         .format(param_name=param_name)
         for param_name in get_full_parameter_list(*forms)
     ]),
-    parameters="".join([
-        "    {param:s},\n".format(param=param_name)
+    parameters=",\n".join([
+        "    {param:s}".format(param=param_name)
         for param_name in get_full_parameter_list(*forms)
     ]),
     full_expr=get_full_expression(*forms)
