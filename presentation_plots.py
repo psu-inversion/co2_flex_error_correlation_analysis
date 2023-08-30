@@ -58,7 +58,7 @@ sns.set_palette("colorblind")
 ############################################################
 # Read in data
 MATCHED_DATA_DS = xarray.open_dataset(
-    "ameriflux-and-casa-matching-data-2.nc4",
+    "ameriflux-and-casa-matching-data.nc4",
     # There will be decent chunks of this where I need all times but
     # only one site.
     chunks={"site": 1},
@@ -218,6 +218,8 @@ multi_spectrum_year_fig, multi_spectrum_year_axes = plt.subplots(
 )
 multi_spectrum_ax_i = 0
 
+SITE_AUTOCORRELATIONS = dict()
+
 
 ############################################################
 # Plot time series, smoothed time series, and autocovariance
@@ -241,6 +243,7 @@ for category, site_list in REPRESENTATIVE_DATA_SITES.items():
         correlation_data = correlation_utils.get_autocorrelation_stats(
             site_df["flux_difference"]
         )
+        SITE_AUTOCORRELATIONS[site_name] = correlation_data["acf"]
         fig, axes = plt.subplots(3, 1, figsize=(6.5, 5))
         print(datetime.datetime.now(), "Starting AmeriFlux line")
         site_df["ameriflux_fluxes"].plot.line(ax=axes[0])
@@ -266,7 +269,7 @@ for category, site_list in REPRESENTATIVE_DATA_SITES.items():
             end=correlation_data.index[-1],
             freq="365D",
         )
-        axes[2].set_xticks(xtick_index.astype("i8").astype("f4"))
+        axes[2].set_xticks(xtick_index.view("i8").astype("f4"))
         axes[2].set_xticklabels(np.arange(0, len(xtick_index)))
         axes[2].set_xlabel("Time difference (years)")
         axes[2].set_ylabel(
@@ -296,8 +299,8 @@ for category, site_list in REPRESENTATIVE_DATA_SITES.items():
             end=correlation_data.index[60 * HOURS_PER_DAY],
             freq="7D",
         )
-        axes[-1].set_xlim(xtick_index[[0, -1]].astype("i8").astype("f4"))
-        axes[-1].set_xticks(xtick_index.astype("i8").astype("f4"))
+        axes[-1].set_xlim(xtick_index[[0, -1]].view("i8").astype("f4"))
+        axes[-1].set_xticks(xtick_index.view("i8").astype("f4"))
         axes[-1].set_xticklabels(np.arange(len(xtick_index)))
         axes[-1].set_xlabel("Time difference (weeks)")
         fig.subplots_adjust(top=0.95, hspace=0.8)
@@ -321,7 +324,7 @@ for category, site_list in REPRESENTATIVE_DATA_SITES.items():
         ax.set_ylim(-1, 1)
         ax.set_xlim(
             correlation_data.index[[0, int(np.ceil(10 * HOURS_PER_YEAR))]]
-            .astype("i8")
+            .view("i8")
             .astype("f4"),
         )
         multi_corr_ax_i += 1
@@ -354,8 +357,8 @@ xtick_index = pd.timedelta_range(
     freq="365D",
 )
 for ax in multi_corr_axes.flat:
-    ax.set_xticks(xtick_index.astype("i8").astype("f4"), minor=True)
-    ax.set_xticks(xtick_index.astype("i8").astype("f4"))
+    ax.set_xticks(xtick_index.view("i8").astype("f4"), minor=True)
+    ax.set_xticks(xtick_index.view("i8").astype("f4"))
     ax.set_ylabel("Empirical Autocorrelation\n" "(unitless)")
 
 ax.set_xticklabels(np.arange(0, len(xtick_index)))
@@ -371,7 +374,7 @@ COEF_DATA = xarray.open_dataset(
 MEAN_COEFFICIENTS = (
     COEF_DATA.data_vars["optimized_parameters"]
     .set_index(correlation_function="correlation_function_short_name")
-    .sel(correlation_function=["dc_dmc_ap", "dp_dmc_a0"])
+    .sel(correlation_function=["dc_dmp_ac", "dp_dmc_ac", "dc_dmp_ad"])
     .mean("splits")
 )
 # Correlation functions expect time deltas in units of days
@@ -379,16 +382,23 @@ CORRELATION_TIMES = (
     correlation_data.index.values.astype("m8[h]").astype("i8").astype("f4") / 24
 )
 CORRELATIONS = {
-    "EC-driven: with ann.": flux_correlation_function_fits.dc_dmc_ap_curve_ne(
+    "EC-driven: best": flux_correlation_function_fits.dc_dmp_ac_curve_ne(
         CORRELATION_TIMES,
-        **MEAN_COEFFICIENTS.sel(correlation_function="dc_dmc_ap")
+        **MEAN_COEFFICIENTS.sel(correlation_function="dc_dmp_ac")
         .to_series()
         .dropna()
         .to_dict(),
     ),
-    "EC-driven no ann.": flux_correlation_function_fits.dp_dmc_a0_curve_ne(
+    "EC-driven: second-best": flux_correlation_function_fits.dp_dmc_ac_curve_ne(
         CORRELATION_TIMES,
-        **MEAN_COEFFICIENTS.sel(correlation_function="dp_dmc_a0")
+        **MEAN_COEFFICIENTS.sel(correlation_function="dp_dmc_ac")
+        .to_series()
+        .dropna()
+        .to_dict(),
+    ),
+    "EC-driven: third-best": flux_correlation_function_fits.dc_dmp_ad_curve_ne(
+        CORRELATION_TIMES,
+        **MEAN_COEFFICIENTS.sel(correlation_function="dc_dmp_ad")
         .to_series()
         .dropna()
         .to_dict(),
@@ -424,6 +434,36 @@ modeled_acf_legend = multi_corr_axes.flat[0].legend(ncol=2)
 multi_corr_fig.savefig("shared-axis-modeled-acf-plots-long.pdf")
 multi_corr_fig.savefig("shared-axis-modeled-acf-plots-long.png", dpi=300)
 
+long_modeled_acf_fig, long_modeled_acf_axes = plt.subplots(
+    2, 2, sharex=True, sharey=True, figsize=(6.5, 3.5), constrained_layout=True
+)
+# Plot the modeled correlations
+for (site_name, site_acf), ax in zip(SITE_AUTOCORRELATIONS.items(), long_modeled_acf_axes[0, :]):
+    ax.plot(
+        site_acf.index.values.astype("m8[ns]"),
+        site_acf.values,
+        label=site_name
+    )
+    ax.set_title(site_name)
+    ax.set_ylim(-1, 1)
+    ax.set_xlim(0, xtick_index[-1].to_timedelta64().astype("i8"))
+
+for (label, modeled_corr), ax in zip(CORRELATIONS.items(), long_modeled_acf_axes[1, :]):
+    ax.plot(
+        correlation_data.index.values.astype("m8[ns]"),
+        modeled_corr,
+        label=label,
+    )
+    ax.set_title(label)
+    ax.set_xticks(xtick_index.view("i8"))
+    ax.set_xticklabels(range(len(xtick_index)))
+    ax.set_xlabel("Time difference (years)")
+
+long_modeled_acf_axes[0, 0].set_ylabel("Empirical\nautocorrelation\n(unitless)")
+long_modeled_acf_axes[1, 0].set_ylabel("Modeled\nautocorrelation\n(unitless)")
+
+long_modeled_acf_fig.savefig("split-axis-modeled-acf-plots-long.png", dpi=300, bbox_inches="tight")
+
 multi_spectrum_day_axes[0].set_xlabel("")
 multi_spectrum_day_fig.tight_layout()
 multi_spectrum_day_fig.savefig("shared-axis-spectrum-plots-day-full.pdf")
@@ -457,9 +497,9 @@ xtick_index_minor = pd.timedelta_range(
     freq="1D",
 )
 for ax in multi_corr_axes.flat:
-    ax.set_xlim(xtick_index_minor[[0, -1]].astype("i8").astype("f4"))
-    ax.set_xticks(xtick_index_minor.astype("i8").astype("f4"), minor=True)
-    ax.set_xticks(xtick_index.astype("i8").astype("f4"))
+    ax.set_xlim(xtick_index_minor[[0, -1]].view("i8").astype("f4"))
+    ax.set_xticks(xtick_index_minor.view("i8").astype("f4"), minor=True)
+    ax.set_xticks(xtick_index.view("i8").astype("f4"))
 
 ax.set_xticklabels(np.arange(0, len(xtick_index)))
 ax.set_xlabel("Time difference (weeks)")
@@ -555,16 +595,27 @@ def savefig(
 
 
 CASA_DATA_PATH = (
-    "../casa_downscaling/orders/0fb5e27b5f7b886f55cb6639763e77ca/"
-    "ACT_CASA_Ensemble_Prior_Fluxes/data"
+    "../../casa_downscaling"
+    # "/orders/0fb5e27b5f7b886f55cb6639763e77ca/"
+    # "ACT_CASA_Ensemble_Prior_Fluxes/data"
 )
-casa_ds = xarray.open_dataset(
+casa_gpp_ds = xarray.open_dataset(
     os.path.join(
-        CASA_DATA_PATH, "CASA_L2_Ensemble_Mean_Monthly_Biogenic_NEE_CONUS_2010.nc4"
+        CASA_DATA_PATH, "CASA_L2_Ensemble_Mean_Monthly_Biogenic_GPP_CONUS_2010.nc4"
     ),
     decode_coords="all",
     chunks={"time": 1, "y": 4000, "x": 4000},
 )
+casa_reco_ds = xarray.open_dataset(
+    os.path.join(
+        CASA_DATA_PATH, "CASA_L2_Ensemble_Mean_Monthly_Biogenic_RECO_CONUS_2010.nc4"
+    ),
+    decode_coords="all",
+    chunks={"time": 1, "y": 4000, "x": 4000},
+)
+casa_ds = casa_reco_ds.rename(
+    Biogenic_RECO_Ensemble_Mean="Biogenic_NEE_Ensemble_Mean"
+) - casa_gpp_ds.rename(Biogenic_GPP_Ensemble_Mean="Biogenic_NEE_Ensemble_Mean")
 casa_nee_july = (
     casa_ds["Biogenic_NEE_Ensemble_Mean"]
     .sel(time="2010-07")
@@ -644,15 +695,19 @@ savefig(
     ncolors=128,
 )
 
+############################################################
+# Time-series to autocorrelation demonstration plot
 site_name = "US-PFa"
 site_df = site_data.to_dataframe().loc[:, site_data.data_vars].resample("1H").mean()
-site_data = MATCHED_DATA_DS.sel(site=site_name).load().dropna("time", how="any")
+site_data = MATCHED_DATA_DS.sel(site=site_name).load().dropna("time", how="all")
 correlation_data = correlation_utils.get_autocorrelation_stats(
     site_df["flux_difference"]
 )
-fig, axes = plt.subplots(3, 1, figsize=(6.5, 5))
-site_df["ameriflux_fluxes"].plot.line(ax=axes[0], label="AmeriFlux")
-site_df["casa_fluxes"].plot.line(ax=axes[0], label="CASA")
+
+fig, axes = plt.subplots(3, 1, figsize=(6.5, 4.5), constrained_layout=True)
+amf_lines = site_df["ameriflux_fluxes"].plot.line(ax=axes[0], label="AmeriFlux")
+casa_lines = site_df["casa_fluxes"].plot.line(ax=axes[0], label="CASA")
+axes[0].legend(ncol=2)
 resids = site_df["ameriflux_fluxes"] - site_df["casa_fluxes"]
 resids.plot.line(ax=axes[1])
 correlation_data["acf"].plot.line(ax=axes[2])
@@ -673,14 +728,23 @@ xtick_index = pd.timedelta_range(
     end=correlation_data.index[60 * HOURS_PER_DAY],
     freq="7D",
 )
-axes[-1].set_xlim(xtick_index[[0, -1]].astype("i8").astype("f4"))
-axes[-1].set_xticks(xtick_index.astype("i8").astype("f4"))
+xtick_minor_index = pd.timedelta_range(
+    start=correlation_data.index[0],
+    end=correlation_data.index[60 * HOURS_PER_DAY],
+    freq="1D",
+)
+axes[-1].set_xlim(xtick_index[[0, -1]].view("i8").astype("f4"))
+axes[-1].set_xticks(xtick_index.view("i8").astype("f4"))
+axes[-1].set_xticks(xtick_minor_index.view("i8").astype("f4"), minor=True)
 axes[-1].set_xticklabels(np.arange(len(xtick_index)))
 axes[-1].set_xlabel("Time difference (weeks)")
 # fig.subplots_adjust(top=0.95, hspace=0.3, hspace=0.8)
 fig.suptitle(site_name)
 
-axes[1].set_xlabel("Time")
+axes[0].set_xlabel("")
+axes[0].set_ylim(-40, 40)
+axes[1].set_xlabel("")
+axes[1].set_ylim(-40, 40)
 axes[2].set_xlabel("Time difference (weeks)")
 axes[0].set_ylabel("NEE\n(\N{MICRO SIGN}mol/m\N{SUPERSCRIPT TWO}/s)")
 axes[1].set_ylabel("Residual\n(\N{MICRO SIGN}mol/m\N{SUPERSCRIPT TWO}/s)")

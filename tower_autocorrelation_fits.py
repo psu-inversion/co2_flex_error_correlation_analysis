@@ -11,7 +11,6 @@ import numpy as np
 import pandas as pd
 import scipy.optimize
 
-import flux_correlation_functions
 import flux_correlation_functions_py
 
 print("Reading correlation data", flush=True)
@@ -22,6 +21,7 @@ corr_data2 = pd.read_csv(
     "ameriflux-minus-casa-hour-towers-autocorrelation-functions.csv", index_col=0
 )
 corr_data = pd.concat([corr_data1, corr_data2], axis=1)
+# corr_data = corr_data2
 corr_data.index = pd.TimedeltaIndex(corr_data.index)
 corr_data.index.name = "Time separation"
 corr_data = corr_data.astype(np.float32)
@@ -34,6 +34,7 @@ pair_counts2 = pd.read_csv(
     "ameriflux-minus-casa-hour-towers-pair-counts.csv", index_col=0
 )
 pair_counts = pd.concat([pair_counts1, pair_counts2], axis=1)
+# pair_counts = pair_counts2
 pair_counts.index = pd.TimedeltaIndex(pair_counts.index)
 print("Have pair counts", flush=True)
 
@@ -108,7 +109,7 @@ PARAM_UPPER_BOUNDS = dict(
     resid_coef=10,
     To=500.0,  # fortnights
     ec_coef=10,
-    Tec=1000.0,  # hours
+    Tec=12.0,  # hours
 )
 
 for coef, val in STARTING_PARAMS.items():
@@ -136,7 +137,7 @@ for column in corr_data.iloc[:, :]:
         tower_counts != 0
     ]
     tower_counts = tower_counts.loc[tower_correlations.index]
-    tower_lags = tower_correlations.index.values.astype("m8[h]").astype("u8")
+    tower_lags = tower_correlations.index.to_array().astype("m8[h]").view("u8")
     tower_lags -= tower_lags[0]
     tower_lags = tower_lags.astype(np.float32) / HOURS_PER_DAY
     if (

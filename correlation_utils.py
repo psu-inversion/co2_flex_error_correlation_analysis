@@ -58,7 +58,7 @@ def get_autocorrelation_stats(column):
     result.loc[:, "acovf"] = acovf(
         column,
         missing="conservative",
-        unbiased=True,
+        adjusted=True,
         fft=True,
     ).astype(np.float32)
     result.loc[:, "acf"] = acf(

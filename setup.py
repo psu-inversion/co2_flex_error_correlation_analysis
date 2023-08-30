@@ -153,8 +153,8 @@ def {func_name:s}_curve_ne(
     return ne.evaluate(
         "{full_expr:s}",
         local_dict={{
+            "tdata": tdata,
 {param_names_from_parameters:s}
-            "tdata": tdata
         }},
         global_dict=GLOBAL_DICT,
     )
@@ -215,7 +215,6 @@ def {function_name:s}_fit_loop(
     cdef float_fun sin = cysin
 
     resid_timescale *= DAYS_PER_FORTNIGHT
-    ec_timescale /= HOURS_PER_DAY
 
     for j in range(n_parameters):
         deriv[j] = 0.0
@@ -237,22 +236,20 @@ def {function_name:s}_fit_loop(
         if resid_timescale > 0:
             resid_corr = resid_coef * exp(-tdata / resid_timescale)
             here_corr += resid_corr
-            here_deriv[n_parameters - 4] = exp(-tdata / resid_timescale)
-            here_deriv[n_parameters - 3] = resid_corr * tdata / resid_timescale ** 2
+            here_deriv[n_parameters - 3] = exp(-tdata / resid_timescale)
+            here_deriv[n_parameters - 2] = resid_corr * tdata / resid_timescale ** 2
 
-        if ec_timescale > 0:
-            ec_corr = ec_coef * exp(-tdata / ec_timescale)
+        if tdata == 0:
+            ec_corr = ec_coef
             here_corr += ec_corr
-            here_deriv[n_parameters - 2] = exp(-tdata / ec_timescale)
-            here_deriv[n_parameters - 1] = ec_corr * tdata / ec_timescale ** 2
+            here_deriv[n_parameters - 1] = 1
 
         weighted_fit += pair_count[i] * (here_corr - empirical_correlogram[i]) ** 2
         deriv_common = pair_count[i] * 2 * (here_corr - empirical_correlogram[i])
         for j in range(n_parameters):
             deriv[j] += deriv_common * here_deriv[j]
 
-    deriv[n_parameters - 3] *= DAYS_PER_FORTNIGHT
-    deriv[n_parameters - 1] /= HOURS_PER_DAY
+    deriv[n_parameters - 2] *= DAYS_PER_FORTNIGHT
 
     return weighted_fit, np.asarray(
         <floating_type[:n_parameters]>deriv
@@ -273,9 +270,7 @@ def {function_name:s}_fit_loop(
                         (
                             "    cdef floating_type {param_name:s}"
                             " = parameters[{i:d}]\n"
-                        ).format(
-                            i=i, param_name=param_name
-                        )
+                        ).format(i=i, param_name=param_name)
                         for i, param_name in enumerate(get_full_parameter_list(*forms))
                     ]
                 ),
@@ -354,7 +349,6 @@ def {function_name:s}_curve_loop(
     cdef float_fun sin = cysin
 
     resid_timescale *= DAYS_PER_FORTNIGHT
-    ec_timescale /= HOURS_PER_DAY
 
     for i in range(n_times):
         tdata = tdata_base[i]
@@ -373,18 +367,15 @@ def {function_name:s}_curve_loop(
         if resid_timescale > 0:
             resid_corr = resid_coef * exp(-tdata / resid_timescale)
             here_corr += resid_corr
-            deriv[i, n_parameters - 4] = exp(-tdata / resid_timescale)
-            deriv[i, n_parameters - 3] = (
+            deriv[i, n_parameters - 3] = exp(-tdata / resid_timescale)
+            deriv[i, n_parameters - 2] = (
                 resid_corr * tdata / resid_timescale ** 2 * DAYS_PER_FORTNIGHT
             )
 
-        if ec_timescale > 0:
-            ec_corr = ec_coef * exp(-tdata / ec_timescale)
+        if tdata == 0:
+            ec_corr = ec_coef
             here_corr += ec_corr
-            deriv[i, n_parameters - 2] = exp(-tdata / ec_timescale)
-            deriv[i, n_parameters - 1] = (
-                ec_corr * tdata / ec_timescale ** 2 / HOURS_PER_DAY
-            )
+            deriv[i, n_parameters - 1] = 1
 
         curve[i] = here_corr
 
@@ -454,8 +445,8 @@ def {function_name:s}_curve_loop(
 setup(
     name="co2_flux_correlation_analysis",
     author="DWesl",
-    version="0.0.0.dev0",
-    py_modules=["correlation_function_fits"],
+    version="0.0.0.rc2",
+    py_modules=["correlation_function_fits", "correlation_utils"],
     ext_modules=cythonize(
         [
             Extension(
